@@ -3,34 +3,31 @@
 Intended order of work. Phases are sequential unless noted; each one ends
 with something runnable. No dates: the order is a commitment, the pace is not.
 
-## Phase 0: Feasibility spike
+## Phase 0: Feasibility spike (done)
 
-Answer the questions the rest of the plan depends on.
-
-- Load the TPC-DS reference model and data from the Ossie repository into a
-  local ClickHouse.
-- Run every metric and field expression in the model through SQLGlot,
-  parsing `OSSIE_SQL_2026` as ANSI SQL and emitting ClickHouse SQL.
-- Record: share of expressions translated without manual work, the list of
-  functions that fail, the schema version and the set of relationship kinds
-  present in the model.
-- Decide whether the SQLGlot-based translation design holds. If not, revise
-  the technical approach before continuing.
+Completed 2026-09-30. Findings in [docs/phase-0-findings.md](docs/phase-0-findings.md).
+The SQLGlot-based translation design holds. Later phases below were adjusted
+from the findings.
 
 ## Phase 1: Model loader
 
-- Read Ossie models from YAML and JSON.
-- Validate against the official JSON schema. Pin the supported schema
-  version and reject others with a clear message.
-- Typed in-memory representation of the model.
+- Build on the `apache-ossie` package from the Ossie repository (Pydantic
+  models, YAML and JSON loading). Pin it as a git dependency until it is on
+  PyPI.
+- Pin the supported schema version (`0.2.0.dev0` today) and reject others
+  with a clear message.
 - CLI: `ossie-clickhouse validate <model>`.
 
 ## Phase 2: Expression translation
 
 - Translate field and metric expressions to ClickHouse SQL.
-- Function mapping table for the gaps found in Phase 0.
-- Fallback to `ANSI_SQL` when `OSSIE_SQL_2026` is absent.
-- Unit tests covering every expression in the TPC-DS model.
+- Function mapping table for the gaps found in Phase 0 (about 25 entries),
+  a `TO_CHAR` format token table, and a NaN-versus-NULL policy.
+- `ANSI_SQL` is what models carry today; treat it as the primary input and
+  `OSSIE_SQL_2026` as preferred when present.
+- Tests compare values against a reference engine (DuckDB), not only that
+  ClickHouse accepts the SQL. Cover every expression in the TPC-DS model and
+  every function in the spec catalog.
 - Switch to the upstream SQLGlot Ossie dialect once apache/ossie PR #222
   lands.
 
@@ -48,6 +45,8 @@ metrics over metrics.
 ## Phase 4: Executor
 
 - Execution through `clickhouse-connect` against self-hosted and Cloud.
+- Mapping rule from Ossie `source` names (three-part, e.g.
+  `tpcds.public.store_sales`) to ClickHouse `database.table`.
 - Introspection: engine per table from `system.tables`, dictionaries from
   `system.dictionaries`.
 - Deduplication for `ReplacingMergeTree`. Evaluate `FINAL` against
