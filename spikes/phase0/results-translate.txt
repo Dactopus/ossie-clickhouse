@@ -1,0 +1,148 @@
+Argument 'format' is not supported for expression 'ToChar' when targeting ClickHouse.
+SUMMARY
+  field     31/ 31 ok
+  metric     8/  8 ok
+  catalog  122/143 ok
+
+FAILURES
+[catalog] VAR_POP(x)
+    -> VARIANCE_POP(x)
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `VARIANCE_POP` does not exist. In scope SELECT VARIANCE_PO
+[catalog] PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)
+    -> PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x NULLS FIRST)
+    !! Received ClickHouse exception, code: 62, server response: Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x NULLS F
+[catalog] PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)
+    -> PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x NULLS FIRST)
+    !! Received ClickHouse exception, code: 62, server response: Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x NULLS F
+[catalog] APPROX_PERCENTILE(x, 0.5)
+    -> APPROX_PERCENTILE(x, 0.5)
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `APPROX_PERCENTILE` does not exist. In scope SELECT APPROX
+[catalog] CURRENT_TIME
+    -> CURRENT_TIME()
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `CURRENT_TIME` does not exist. Maybe you meant: ['current_
+[catalog] CURRENT_TIME()
+    -> CURRENT_TIME()
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `CURRENT_TIME` does not exist. Maybe you meant: ['current_
+[catalog] DAYOFYEAR(d)
+    -> DAY_OF_YEAR(d)
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `DAY_OF_YEAR` does not exist. Maybe you meant: ['DAYOFYEAR
+[catalog] EXTRACT(DAYOFWEEK FROM d)
+    -> EXTRACT(DAYOFWEEK FROM d)
+    !! Received ClickHouse exception, code: 62, server response: Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2.5
+[catalog] EXTRACT(DAYOFYEAR FROM d)
+    -> EXTRACT(DAYOFYEAR FROM d)
+    !! Received ClickHouse exception, code: 62, server response: Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2.5
+[catalog] DATEDIFF(day, d, d2)
+    -> DATE_DIFF(D2, d, day)
+    !! Received ClickHouse exception, code: 47, server response: Code: 47. DB::Exception: Unknown expression or function identifier `D2`. Maybe you meant: ['d2']. In s
+[catalog] DATEDIFF(month, d, d2)
+    -> DATE_DIFF(D2, d, month)
+    !! Received ClickHouse exception, code: 47, server response: Code: 47. DB::Exception: Unknown expression or function identifier `D2`. Maybe you meant: ['d2']. In s
+[catalog] DATEDIFF(year, d, d2)
+    -> DATE_DIFF(D2, d, year)
+    !! Received ClickHouse exception, code: 47, server response: Code: 47. DB::Exception: Unknown expression or function identifier `D2`. Maybe you meant: ['d2']. In s
+[catalog] TO_DATE('2024-01-15')
+    -> TO_DATE('2024-01-15')
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `TO_DATE` does not exist. Maybe you meant: ['toDate','TO_D
+[catalog] TO_TIMESTAMP('2024-01-15 10:30:00')
+    -> TO_TIMESTAMP('2024-01-15 10:30:00')
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `TO_TIMESTAMP` does not exist. Maybe you meant: ['UTC_time
+[catalog] TO_DATE('15/01/2024', 'DD/MM/YYYY')
+    -> TO_DATE('15/01/2024', 'DD/MM/YYYY')
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `TO_DATE` does not exist. Maybe you meant: ['toDate','TO_D
+[catalog] SPLIT_PART(s, '-', 1)
+    -> SPLIT_PART(s, '-', 1)
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `SPLIT_PART` does not exist. In scope SELECT SPLIT_PART(s,
+[catalog] CONTAINS(s, 'a')
+    -> CONTAINS(s, 'a')
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `CONTAINS` does not exist. In scope SELECT CONTAINS(s, 'a'
+[catalog] REGEXP_COUNT(s, 'a')
+    -> REGEXP_COUNT(s, 'a')
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `REGEXP_COUNT` does not exist. Maybe you meant: ['regr_cou
+[catalog] IFF(x > 1, 1, 0)
+    -> IFF(x > 1, 1, 0)
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `IFF` does not exist. Maybe you meant: ['if']. In scope SE
+[catalog] ZEROIFNULL(x)
+    -> ZEROIFNULL(x)
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `ZEROIFNULL` does not exist. Maybe you meant: ['isZeroOrNu
+[catalog] NULLIFZERO(x)
+    -> NULLIFZERO(x)
+    !! Received ClickHouse exception, code: 46, server response: Code: 46. DB::Exception: Function with name `NULLIFZERO` does not exist. In scope SELECT NULLIFZERO(x)
+
+CHANGED (translated ok, but text differs)
+  SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+    -> SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date NULLS FIRST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+  SUM(store_sales.ss_ext_sales_price) - LAG(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year, date_dim.d_moy)
+    -> SUM(store_sales.ss_ext_sales_price) - lag(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year NULLS FIRST, date_dim.d_moy NULLS FIRST)
+  STDDEV(x)
+    -> stddevSamp(x)
+  VARIANCE(x)
+    -> varSamp(x)
+  VAR_SAMP(x)
+    -> varSamp(x)
+  APPROX_COUNT_DISTINCT(x)
+    -> uniq(x)
+  CURRENT_DATE
+    -> CURRENT_DATE()
+  CURRENT_TIMESTAMP
+    -> CURRENT_TIMESTAMP()
+  DATE_TRUNC('year', d)
+    -> dateTrunc('YEAR', d)
+  DATE_TRUNC('quarter', d)
+    -> dateTrunc('QUARTER', d)
+  DATE_TRUNC('month', d)
+    -> dateTrunc('MONTH', d)
+  DATE_TRUNC('week', d)
+    -> dateTrunc('WEEK', d)
+  DATE_TRUNC('day', d)
+    -> dateTrunc('DAY', d)
+  DATE_TRUNC('hour', ts)
+    -> dateTrunc('HOUR', ts)
+  DATE_TRUNC('minute', ts)
+    -> dateTrunc('MINUTE', ts)
+  DATE_TRUNC('second', ts)
+    -> dateTrunc('SECOND', ts)
+  DATE '2024-01-15'
+    -> CAST('2024-01-15' AS Nullable(DATE))
+  TIMESTAMP_NTZ '2024-01-15 10:30:00'
+    -> CAST('2024-01-15 10:30:00' AS Nullable(DateTime))
+  TIME '10:30:00'
+    -> CAST('10:30:00' AS Nullable(TIME))
+  CAST('2024-01-15' AS DATE)
+    -> CAST('2024-01-15' AS Nullable(DATE))
+  CAST('2024-01-15 10:30:00' AS TIMESTAMP_NTZ)
+    -> CAST('2024-01-15 10:30:00' AS Nullable(DateTime))
+  CAST('10:30:00' AS TIME)
+    -> CAST('10:30:00' AS Nullable(TIME))
+  TO_CHAR(d, 'YYYY-MM-DD')
+    -> CAST(d AS Nullable(String))
+  LENGTH(s)
+    -> CHAR_LENGTH(s)
+  POSITION('a' IN s)
+    -> POSITION(s, 'a')
+  CHARINDEX('a', s)
+    -> POSITION(s, 'a')
+  REGEXP_LIKE(s, 'a.*')
+    -> match(s, 'a.*')
+  CEILING(x)
+    -> CEIL(x)
+  TRUNCATE(x, 1)
+    -> trunc(x, 1)
+  MOD(x, 2)
+    -> x % 2
+  LOG(10, x)
+    -> LOG10(x)
+  IF(x > 1, 1, 0)
+    -> CASE WHEN x > 1 THEN 1 ELSE 0 END
+  IFNULL(x, 1)
+    -> COALESCE(x, 1)
+  NVL(x, 1)
+    -> COALESCE(x, 1)
+  NVL2(x, 1, 0)
+    -> CASE WHEN NOT (x IS NULL) THEN 1 ELSE 0 END
+  x NOT IN (1, 2)
+    -> NOT (x IN (1, 2))
+  x IS NOT NULL
+    -> NOT (x IS NULL)
+  x != 1
+    -> x <> 1
