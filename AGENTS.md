@@ -53,14 +53,16 @@ Out of scope, do not build:
 Python library with a CLI entry point. Details in the README section
 "Proposed technical approach"; the parts that constrain code:
 
-- **SQLGlot** for expression translation. Parse `OSSIE_SQL_2026` as ANSI SQL
-  until the upstream Ossie dialect (apache/ossie PR #222) lands, then switch.
-  Fall back to a model's `ANSI_SQL` expression when `OSSIE_SQL_2026` is absent.
+- **SQLGlot** for expression translation, parsing with its default dialect
+  until the upstream Ossie dialect (apache/ossie PR #222) lands. Models today
+  carry `ANSI_SQL` expressions only; prefer `OSSIE_SQL_2026` when present.
 - **clickhouse-connect** over HTTP for execution.
 - **MCP SDK** only behind the `[mcp]` extra. The core library must import
   without it.
-- **Ossie JSON schema** from the Ossie repository, with the supported schema
-  version pinned and checked explicitly.
+- **apache-ossie** package (from the Ossie repository, git dependency until
+  published) for loading and validating models. Do not write a model loader.
+- Supported Ossie schema version is pinned (`0.2.0.dev0`) and checked
+  explicitly.
 
 ## Architecture rules
 
@@ -79,10 +81,25 @@ Python library with a CLI entry point. Details in the README section
 
 ## Testing
 
-Unit tests for translation. Integration tests against the TPC-DS reference
-model from the Ossie repository, loaded into a local ClickHouse.
+Translation tests compare values against a reference engine (DuckDB), not
+only that ClickHouse accepts the SQL: a translation that runs and returns the
+wrong value is the failure mode to guard against. Integration tests run
+against the TPC-DS reference model from the Ossie repository, loaded into a
+local ClickHouse. See [spikes/phase0](spikes/phase0/README.md) for setup.
+
+## Known ClickHouse traits to handle
+
+- Float division by zero and single-row `STDDEV`/`VARIANCE` yield `nan`,
+  not `NULL`.
+- No `TO_DATE`, `SPLIT_PART`, `CONTAINS`, `IFF`, `ZEROIFNULL` and similar;
+  each has a ClickHouse equivalent in the mapping table.
+- `EXTRACT(DAYOFWEEK | DAYOFYEAR ...)` is not accepted; use `toDayOfWeek`
+  and `toDayOfYear`.
+- Table names are `database.table`; Ossie `source` may have three parts.
+- `clickhouse-connect` does not decode the `Time` type.
 
 ## Repository status
 
-Greenfield. No code or build tooling exists yet. When they do, add the
-install, test, and lint commands to this file.
+Phase 0 done (see [ROADMAP.md](ROADMAP.md)). No library code or build
+tooling exists yet. When they do, add the install, test, and lint commands
+to this file.
