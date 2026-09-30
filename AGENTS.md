@@ -72,10 +72,14 @@ Python library with a CLI entry point. Details in the README section
   lives only in the MCP layer.
 - Access control is enforced in the executor. The MCP layer only passes on
   the caller's identity.
-- ClickHouse specifics (engine-based deduplication, `dictGet` for
-  dictionaries) come from introspecting `system.tables` and
-  `system.dictionaries`, not from asking the user. Overrides go in the model's
-  `custom_extensions` under `vendor_name: clickhouse`.
+- ClickHouse specifics come from introspecting `system.tables`,
+  `system.columns` and `system.dictionaries`, not from asking the user.
+  `Replacing*` engines are read with `FINAL` (measured faster than `argMax`);
+  single-key dictionaries with `dictGetOrNull` instead of a join. Overrides
+  go in the model's `custom_extensions` under `vendor_name: CLICKHOUSE` as
+  JSON, currently `{"dedup": "none"}`.
+- The planner never talks to the database; it takes an optional `Catalog`
+  the executor built. Keep that boundary.
 - Query planning is deterministic: datasets from `source`, joins from
   `relationships`, one `SELECT` per question. Joins are `LEFT JOIN` from
   one root dataset, only along relationships whose `to_columns` are a
@@ -124,7 +128,9 @@ uv run pytest                 # tests; ClickHouse-dependent ones skip when no se
 uv run pytest -m "not integration"   # unit tests only
 uv run ruff check src tests   # lint
 uv run ruff format src tests  # format
-uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml
+uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml [--url http://127.0.0.1:8123]
+uv run ossie-clickhouse sql tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand
+uv run ossie-clickhouse query tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand --json
 ```
 
 Tests that use the `clickhouse` fixture are integration tests: they need a
@@ -135,4 +141,4 @@ package level only when a module outgrows one file.
 
 ## Repository status
 
-Phases 0 to 3 done (see [ROADMAP.md](ROADMAP.md)).
+Phases 0 to 4 done (see [ROADMAP.md](ROADMAP.md)).

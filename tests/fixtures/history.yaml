@@ -1,0 +1,45 @@
+# Test model: a fact table with change history (ReplacingMergeTree) and a
+# dimension held in a ClickHouse dictionary. Created by tests/test_executor.py.
+version: "0.2.0.dev0"
+name: history_model
+datasets:
+  - name: orders
+    source: ossie_test.orders
+    primary_key: [order_id]
+    fields:
+      - name: order_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: order_id}]}
+      - name: amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
+      - name: country_code
+        expression: {dialects: [{dialect: ANSI_SQL, expression: country_code}]}
+  - name: orders_raw
+    source: ossie_test.orders
+    primary_key: [order_id]
+    custom_extensions:
+      - vendor_name: CLICKHOUSE
+        data: '{"dedup": "none"}'
+    fields:
+      - name: amount
+        expression: {dialects: [{dialect: ANSI_SQL, expression: amount}]}
+  - name: country
+    source: ossie_test.country
+    primary_key: [code]
+    fields:
+      - name: code
+        expression: {dialects: [{dialect: ANSI_SQL, expression: code}]}
+      - name: name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: name}]}
+relationships:
+  - name: orders_to_country
+    from: orders
+    to: country
+    from_columns: [country_code]
+    to_columns: [code]
+metrics:
+  - name: revenue
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders.amount)}]}
+  - name: raw_revenue
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders_raw.amount)}]}
+  - name: spread
+    expression: {dialects: [{dialect: ANSI_SQL, expression: STDDEV(orders.amount)}]}

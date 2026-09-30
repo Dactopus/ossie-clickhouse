@@ -63,21 +63,25 @@ drops fact rows.
 Deferred to Phase 8: multi-fact queries, joins that are not many-to-one,
 metrics over metrics, filters on aggregates (`HAVING`), `source` as a query.
 
-## Phase 4: Executor
+## Phase 4: Executor (done)
 
-- Execution through `clickhouse-connect` against self-hosted and Cloud.
-- Verify the model against the database: sources exist, key and
-  relationship columns exist.
-- Introspection: engine per table from `system.tables`, dictionaries from
-  `system.dictionaries`.
-- Deduplication for `ReplacingMergeTree`. Evaluate `FINAL` against
-  `argMax` on the version column and pick the default on measured cost.
-- `dictGet` for reference data held in dictionaries.
-- Overrides via `custom_extensions` with `vendor_name: CLICKHOUSE`
-  (`vendor_name` is a free string in the spec; upper case by convention).
-- NaN to NULL in result sets (ClickHouse yields `nan` where SQL yields
-  `NULL`).
-- CLI: `ossie-clickhouse query ...`.
+Completed 2026-09-30. `executor.py` connects through `clickhouse-connect`,
+introspects `system.tables`, `system.columns` and `system.dictionaries`
+for the model's sources, and hands the planner a catalog. Tables with an
+engine in the `Replacing*` family are read with `FINAL`: measured on
+3.5 million rows with 20% duplicate versions, `FINAL` was faster than an
+`argMax` rewrite (94 ms against 150 ms alone, 90 against 125 with a join)
+and far simpler to generate, so `argMax` was not built. Single-key
+dictionaries joined on their key are read with `dictGetOrNull` and the
+join is dropped. Per-dataset overrides come from `custom_extensions` with
+`vendor_name: CLICKHOUSE` and JSON data, currently `{"dedup": "none"}`.
+NaN in result sets becomes NULL. `validate --url` checks sources and
+columns against the database. CLI: `ossie-clickhouse query` with TSV or
+`--json` output.
+
+Tests create a `ReplacingMergeTree` fact table and a dictionary in a test
+database and check deduplicated sums, dictionary reads, the override, NaN
+handling, and database-level validation messages.
 
 ## Phase 5: Access control
 
