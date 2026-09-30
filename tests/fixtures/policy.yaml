@@ -1,0 +1,3 @@
+# Objects hidden per ClickHouse user or role, beyond what grants already hide.
+ossie_sales:
+  hidden_metrics: [spread]

@@ -16,6 +16,7 @@ import clickhouse_connect
 from ossie import OssieDataset, OssieDocument
 from sqlglot import exp
 
+from ossie_clickhouse.access import Hidden, Policy, restrict
 from ossie_clickhouse.planner import Catalog, PlanError, Planner, Query, TableInfo, source_table
 from ossie_clickhouse.translate import parse, pick_expression
 
@@ -45,11 +46,36 @@ class Result:
 
 
 class Executor:
-    def __init__(self, client, model: OssieDocument):
+    """Runs as whoever the client is connected as; sees only what that user may read."""
+
+    def __init__(self, client, model: OssieDocument, policy: Policy | None = None):
         self.client = client
-        self.model = model
+        self.full_model = model
         self.catalog = self.introspect()
-        self.planner = Planner(model, self.catalog)
+        self.user, self.roles = self.client.query(
+            "SELECT currentUser(), enabledRoles()"
+        ).result_rows[0]
+        hidden = self._hidden_by_grants()
+        if policy:
+            hidden |= policy.hidden_for(self.user, list(self.roles))
+        self.model = restrict(model, hidden)
+        self.planner = Planner(self.model, self.catalog)
+
+    def _hidden_by_grants(self) -> Hidden:
+        """ClickHouse lists in system.tables and system.columns only what the
+        connected user may read, so anything the model names and the catalog
+        lacks is invisible to this user."""
+        datasets, fields = set(), set()
+        for ds in self.full_model.datasets:
+            info = self.catalog.get(ds.name)
+            if info is None:
+                datasets.add(ds.name)
+                continue
+            for f in ds.fields or []:
+                cols = {c.name for c in parse(pick_expression(f.expression)).find_all(exp.Column)}
+                if not cols <= info.columns:
+                    fields.add(f"{ds.name}.{f.name}")
+        return Hidden(frozenset(datasets), frozenset(fields))
 
     # --- introspection ------------------------------------------------------
 
@@ -57,7 +83,7 @@ class Executor:
         tables: dict[
             tuple[str, str], list[OssieDataset]
         ] = {}  # several datasets may share a source
-        for ds in self.model.datasets:
+        for ds in self.full_model.datasets:
             try:
                 t = source_table(ds.source)
             except PlanError:
@@ -75,10 +101,13 @@ class Executor:
             f"WHERE (database, table) IN ({pairs}) GROUP BY database, table"
         ).result_rows
         columns = {(db, t): frozenset(c) for db, t, c in cols}
-        dicts = self.client.query(
-            "SELECT database, name, attribute.names FROM system.dictionaries "
-            f"WHERE (database, name) IN ({pairs})"
-        ).result_rows
+        try:
+            dicts = self.client.query(
+                "SELECT database, name, attribute.names FROM system.dictionaries "
+                f"WHERE (database, name) IN ({pairs})"
+            ).result_rows
+        except Exception:  # needs an explicit grant; without it dictionaries are joined as tables
+            dicts = []
         attributes = {(db, n): set(a) for db, n, a in dicts}
 
         catalog: Catalog = {}
@@ -100,9 +129,12 @@ class Executor:
     # --- checks -------------------------------------------------------------
 
     def check(self) -> list[str]:
-        """Problems that only the database can reveal: missing sources and columns."""
+        """Problems that only the database can reveal: missing sources and columns.
+
+        Run as a user who can read everything; for a restricted user, missing
+        means hidden, not broken."""
         problems = []
-        for ds in self.model.datasets:
+        for ds in self.full_model.datasets:
             info = self.catalog.get(ds.name)
             if info is None:
                 problems.append(
@@ -121,7 +153,7 @@ class Executor:
                     problems.append(
                         f"dataset {ds.name!r}: column {col!r} ({where}) not in {ds.source}"
                     )
-        for r in self.model.relationships or []:
+        for r in self.full_model.relationships or []:
             for ds_name, cols in ((r.from_dataset, r.from_columns), (r.to, r.to_columns)):
                 info = self.catalog.get(ds_name)
                 for c in cols:

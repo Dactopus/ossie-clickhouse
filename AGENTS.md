@@ -70,8 +70,11 @@ Python library with a CLI entry point. Details in the README section
   Lower layers never import higher ones.
 - The MCP server is a thin adapter over the public library API. No logic
   lives only in the MCP layer.
-- Access control is enforced in the executor. The MCP layer only passes on
-  the caller's identity.
+- Access control is ClickHouse's. Queries run as the connected user; the
+  model is trimmed (`access.py`) to the sources and columns that user can
+  read, as revealed by `system.tables` and `system.columns`. A hidden object
+  must never appear in SQL, errors or suggestions. The optional policy file
+  only hides more; it never grants. Nothing in this project authenticates.
 - ClickHouse specifics come from introspecting `system.tables`,
   `system.columns` and `system.dictionaries`, not from asking the user.
   `Replacing*` engines are read with `FINAL` (measured faster than `argMax`);
@@ -131,7 +134,12 @@ uv run ruff format src tests  # format
 uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml [--url http://127.0.0.1:8123]
 uv run ossie-clickhouse sql tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand
 uv run ossie-clickhouse query tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand --json
+uv run ossie-clickhouse query model.yaml -m revenue --url http://analyst:secret@host:8123 --policy policy.yaml
 ```
+
+Access-control tests create users and need SQL access management on the
+server (`access_management` for the connecting user; in the official Docker
+image `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`). They skip otherwise.
 
 Tests that use the `clickhouse` fixture are integration tests: they need a
 server at `OSSIE_CLICKHOUSE_URL` (default `http://127.0.0.1:8123`) and skip
@@ -141,4 +149,4 @@ package level only when a module outgrows one file.
 
 ## Repository status
 
-Phases 0 to 4 done (see [ROADMAP.md](ROADMAP.md)).
+Phases 0 to 5 done (see [ROADMAP.md](ROADMAP.md)).

@@ -12,6 +12,8 @@ jobs:
       clickhouse:
         image: clickhouse/clickhouse-server:latest
         ports: ["8123:8123"]
+        env:
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
         options: >-
           --health-cmd "wget -qO- http://localhost:8123/ping || exit 1"
           --health-interval 5s --health-timeout 3s --health-retries 20
