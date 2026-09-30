@@ -111,7 +111,35 @@ def test_deterministic():
         ),
         (
             Query(metrics=("total_sales",), filters=("ss_quantity > 1",)),
-            "use dataset.field or a metric name",
+            "use dataset.field or a metric name (did you mean: store_sales.ss_quantity",
+        ),
+        (
+            Query(
+                metrics=("total_sales",),
+                dimensions=("item.i_brand", "store.s_store_sk"),
+                filters=("brand_rank_in_store <= 3",),
+            ),
+            "'brand_rank_in_store <= 3' uses a window function",
+        ),
+        (
+            Query(metrics=("total_sales",), filters=("RANK() OVER (ORDER BY COUNT(*)) < 3",)),
+            "uses a window function",
+        ),
+        (
+            Query(
+                metrics=("total_sales",),
+                dimensions=("item.i_brand",),
+                filters=("total_sales > store_sales.ss_quantity",),
+            ),
+            "mixes an aggregate with store_sales.ss_quantity, which is not a dimension",
+        ),
+        (
+            Query(
+                metrics=("total_sales",),
+                dimensions=("customer.customer_full_name",),
+                filters=("total_sales > 1 AND customer.c_first_name <> ''",),
+            ),
+            "mixes an aggregate with customer.c_first_name",
         ),
         (
             Query(metrics=("total_sales",), filters=("store_sales.ss_quantity IN (SELECT 1)",)),
@@ -145,6 +173,30 @@ def test_aggregate_filters_go_to_having():
     # No dimensions: HAVING without GROUP BY is still one SELECT.
     assert P.sql(Query(metrics=("total_sales",), filters=("total_sales > 1",))).endswith(
         "HAVING SUM(store_sales.ss_ext_sales_price) > 1 SETTINGS join_use_nulls = 1"
+    )
+    # A HAVING filter may use a dimension of the query, even one with an expression.
+    sql = P.sql(
+        Query(
+            metrics=("total_sales",),
+            dimensions=("customer.customer_full_name",),
+            filters=("total_sales > 1 AND customer.customer_full_name <> ''",),
+        )
+    )
+    assert "HAVING SUM(store_sales.ss_ext_sales_price) > 1 AND customer.c_first_name" in sql
+
+
+def test_filter_on_unselected_metric_adds_its_join():
+    sql = P.sql(
+        Query(
+            metrics=("total_sales",),
+            dimensions=("item.i_brand",),
+            filters=("store_productivity > 1",),
+        )
+    )
+    assert "LEFT JOIN tpcds.store AS store ON store_sales.ss_store_sk = store.s_store_sk" in sql
+    assert sql.endswith(
+        "GROUP BY item.i_brand HAVING SUM(store_sales.ss_ext_sales_price) / "
+        "nullIf(SUM(store.s_number_employees), 0) > 1 SETTINGS join_use_nulls = 1"
     )
 
 

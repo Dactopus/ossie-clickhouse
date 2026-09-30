@@ -166,7 +166,8 @@ def build_server(
         """Run a semantic query. metrics and dimensions are names from the model
         (dimensions as dataset.field); filters are SQL-like conditions over
         dataset.field, e.g. "date_dim.d_year = 1998", or over a metric name,
-        e.g. "total_sales > 1000000", which filters the aggregated rows;
+        e.g. "total_sales > 1000000", which filters the aggregated rows
+        (a window metric such as a rank cannot be filtered: select it instead);
         order_by lists metric or dimension names, "name desc" for descending,
         default: first metric descending. Returns rows and the SQL."""
         if not order_by and metrics:

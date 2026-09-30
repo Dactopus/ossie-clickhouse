@@ -37,7 +37,9 @@ Catalog = dict[str, TableInfo]  # by dataset name
 class Query:
     metrics: tuple[str, ...] = ()
     dimensions: tuple[str, ...] = ()  # "dataset.field"
-    filters: tuple[str, ...] = ()  # Ossie expressions over dataset.field
+    # Ossie expressions over dataset.field (WHERE) or over metric names and
+    # aggregates (HAVING); window metrics cannot be filtered in one SELECT.
+    filters: tuple[str, ...] = ()
     order_by: tuple[str, ...] = ()  # metric or dimension names, "name desc" for descending
     limit: int | None = None
 
@@ -85,6 +87,13 @@ class Planner:
             )
         return ds
 
+    def metric(self, name: str):
+        m = self._metrics.get(name.upper())
+        if m is None:
+            names = (x.name for x in self.model.metrics or [])
+            raise PlanError(f"unknown metric {name!r}{_suggest(name, names)}")
+        return m
+
     def field_ref(self, ref: str) -> tuple[OssieDataset, OssieField]:
         if ref.count(".") != 1:
             raise PlanError(f"field reference must be dataset.field, got {ref!r}")
@@ -112,12 +121,13 @@ class Planner:
             if not isinstance(node, exp.Column):
                 return node
             if not node.table:
-                m = self._metrics.get(node.name.upper()) if metrics else None
-                if m is not None:
-                    return self.resolve(pick_expression(m.expression), used)
+                if metrics and node.name.upper() in self._metrics:
+                    return self.resolve(pick_expression(self.metric(node.name).expression), used)
                 hint = ""
                 if metrics:
-                    names = (x.name for x in self.model.metrics or [])
+                    names = [x.name for x in self.model.metrics or []] + [
+                        f"{d.name}.{x.name}" for d in self.model.datasets for x in d.fields or []
+                    ]
                     hint = f"; use dataset.field or a metric name{_suggest(node.name, names)}"
                 raise PlanError(f"unqualified column {node.name!r} in {expression!r}{hint}")
             ds, f = self.field_ref(f"{node.table}.{node.name}")
@@ -206,17 +216,35 @@ class Planner:
             group.append(e.copy())
 
         for name in q.metrics:
-            m = self._metrics.get(name.upper())
-            if m is None:
-                names = (x.name for x in self.model.metrics or [])
-                raise PlanError(f"unknown metric {name!r}{_suggest(name, names)}")
+            m = self.metric(name)
             selects.append(self.resolve(pick_expression(m.expression), used).as_(m.name))
 
         where: list[exp.Expression] = []
         having: list[exp.Expression] = []  # filters over aggregates or metric names
+        grouped = {e.sql() for e in group}
         for f in q.filters:
             tree = self.resolve(f, used, metrics=True)
-            (having if tree.find(exp.AggFunc) else where).append(tree)
+            if tree.find(exp.Window):
+                raise PlanError(
+                    f"filter {f!r} uses a window function; a window metric cannot be "
+                    "filtered in the same SELECT, select it and filter the rows instead"
+                )
+            if not tree.find(exp.AggFunc):
+                where.append(tree)
+                continue
+            # HAVING may only see aggregates and GROUP BY expressions.
+            for col in tree.find_all(exp.Column):
+                if col.find_ancestor(exp.AggFunc):
+                    continue
+                node: exp.Expression | None = col
+                while node is not None and node.sql() not in grouped:
+                    node = node.parent
+                if node is None:
+                    raise PlanError(
+                        f"filter {f!r} mixes an aggregate with {col.sql()}, which is not a "
+                        "dimension of this query; add it to dimensions or put it in its own filter"
+                    )
+            having.append(tree)
 
         root = self._root(used)
         sel = exp.select(*selects).from_(self._table(root))
