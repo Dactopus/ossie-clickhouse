@@ -133,12 +133,12 @@ TPC-DS; a raw stdio handshake was checked by hand.
 - Filters on aggregates (done): a filter that names a metric
   (`total_sales > 1000000`) or contains an aggregate goes to `HAVING`,
   the rest to `WHERE`. Same `filters` list, no new parameter.
-- Packaging: installable with `pip install git+https://github.com/Dactopus/ossie-clickhouse`.
+- Packaging (done): installable with `pip install git+https://github.com/Dactopus/ossie-clickhouse`.
   PyPI itself refuses packages with a git dependency, and `apache-ossie` is
   one until upstream publishes; see "Waiting for a trigger".
-- Documentation: installation, model authoring for ClickHouse, CLI, MCP
+- Documentation (done): installation, model authoring for ClickHouse, CLI, MCP
   setup with desktop agents, access control through ClickHouse.
-- Contribution guide.
+- Contribution guide (done).
 - Repository made public.
 
 ## Not scheduled

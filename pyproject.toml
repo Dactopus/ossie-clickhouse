@@ -1,10 +1,19 @@
 [project]
 name = "ossie-clickhouse"
-version = "0.0.1"
+version = "0.1.0"
 description = "Apache Ossie semantic model implementation for ClickHouse"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Alexander Yakutskiy" }]
 requires-python = ">=3.11"
+keywords = ["clickhouse", "semantic-layer", "ossie", "mcp", "metrics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Database",
+]
 dependencies = [
     # Not on PyPI yet; pinned to the Ossie main revision the code was written against.
     "apache-ossie @ git+https://github.com/apache/ossie.git@adfa9e4#subdirectory=python",
@@ -12,6 +21,10 @@ dependencies = [
     "sqlglot>=27",
     "clickhouse-connect>=0.8",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Dactopus/ossie-clickhouse"
+Issues = "https://github.com/Dactopus/ossie-clickhouse/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=2,<3"]

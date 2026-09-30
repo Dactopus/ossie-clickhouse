@@ -50,8 +50,7 @@ Out of scope, do not build:
 
 ## Stack
 
-Python library with a CLI entry point. Details in the README section
-"Proposed technical approach"; the parts that constrain code:
+Python library with a CLI entry point. The parts that constrain code:
 
 - **SQLGlot** for expression translation, parsing with its default dialect
   until the upstream Ossie dialect (apache/ossie PR #222) lands. Models today

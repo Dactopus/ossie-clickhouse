@@ -7,24 +7,28 @@ runs is limited to that ClickHouse user.
 
 ## Claude Desktop
 
-Add to `claude_desktop_config.json` (Settings, Developer, Edit Config).
-Replace the three placeholders: the absolute path of this repository, the
-absolute path of the model, and the ClickHouse URL with the credentials of
-the user the agent should act as. Desktop apps run with a minimal `PATH`,
-so give `uv` as an absolute path (`which uv`) if it is not found.
+Install with the `[mcp]` extra (see the README), then add to
+`claude_desktop_config.json` (Settings, Developer, Edit Config). Replace
+the placeholders: the absolute path of the command (`which
+ossie-clickhouse`; desktop apps run with a minimal `PATH`), the absolute
+path of the model, and the ClickHouse URL with the credentials of the
+user the agent should act as.
 
 ```json
 {
   "mcpServers": {
     "ossie-clickhouse": {
-      "command": "/ABSOLUTE/PATH/TO/uv",
-      "args": ["run", "--directory", "/ABSOLUTE/PATH/TO/ossie-clickhouse",
-               "ossie-clickhouse", "serve", "/ABSOLUTE/PATH/TO/model.yaml"],
+      "command": "/ABSOLUTE/PATH/TO/ossie-clickhouse",
+      "args": ["serve", "/ABSOLUTE/PATH/TO/model.yaml"],
       "env": {"OSSIE_CLICKHOUSE_URL": "http://USER:PASSWORD@127.0.0.1:8123"}
     }
   }
 }
 ```
+
+From a checkout of this repository instead, use `uv` as the command
+(absolute path, `which uv`) with the arguments
+`["run", "--directory", "/ABSOLUTE/PATH/TO/ossie-clickhouse", "ossie-clickhouse", "serve", "/ABSOLUTE/PATH/TO/model.yaml"]`.
 
 Restart the app. If it reports "Server disconnected", open
 `~/Library/Logs/Claude/mcp-server-ossie-clickhouse.log`: a placeholder left
@@ -39,8 +43,8 @@ example "sales by item category in 1998"; the agent should call
 Any MCP client that supports stdio works the same way. For Claude Code:
 
 ```bash
-claude mcp add ossie-clickhouse -e OSSIE_CLICKHOUSE_URL=http://127.0.0.1:8123 -- \
-  uv run --directory /path/to/ossie-clickhouse ossie-clickhouse serve /path/to/model.yaml
+claude mcp add ossie-clickhouse -e OSSIE_CLICKHOUSE_URL=http://USER:PASSWORD@127.0.0.1:8123 -- \
+  ossie-clickhouse serve /path/to/model.yaml
 ```
 
 ## Checking without an agent
