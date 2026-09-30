@@ -18,7 +18,9 @@ jobs:
         env:
           CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
         volumes:
-          - ${{ github.workspace }}/tpcds:/var/lib/clickhouse/user_files/tpcds
+          # runner.temp, not the workspace: actions/checkout recreates the workspace
+          # directory, which detaches a bind mount made there
+          - ${{ runner.temp }}/tpcds:/var/lib/clickhouse/user_files/tpcds
         options: >-
           --health-cmd "wget -qO- http://localhost:8123/ping || exit 1"
           --health-interval 5s --health-timeout 3s --health-retries 20
@@ -30,12 +32,13 @@ jobs:
       - run: uv run ruff format --check src tests
       - name: Load the TPC-DS reference data (see CONTRIBUTING.md)
         run: |
-          mkdir -p tpcds && sudo chmod a+rwx tpcds  # docker made the bind mount root-owned
+          D="$RUNNER_TEMP/tpcds"; sudo chmod a+rwx "$D"  # docker made the bind mount root-owned
           uv run python -c "
-          import duckdb; c = duckdb.connect(); c.execute('INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=1)')
+          import duckdb, os; d = os.environ['RUNNER_TEMP'] + '/tpcds'
+          c = duckdb.connect(); c.execute('INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=1)')
           for t in ['store_sales', 'date_dim', 'customer', 'item', 'store']:
-              c.execute(f\"COPY {t} TO 'tpcds/{t}.parquet' (FORMAT PARQUET)\")"
-          chmod -R a+rX tpcds && ls -la tpcds
+              c.execute(f\"COPY {t} TO '{d}/{t}.parquet' (FORMAT PARQUET)\")"
+          chmod -R a+rX "$D"
           curl -sS --fail-with-body http://127.0.0.1:8123 --data-binary "CREATE DATABASE tpcds"
           for t in store_sales date_dim customer item store; do
             curl -sS --fail-with-body http://127.0.0.1:8123 --data-binary "CREATE TABLE tpcds.$t ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM file('tpcds/$t.parquet', Parquet)"
