@@ -20,6 +20,18 @@ their existence is checked against the database in Phase 4, not here.
 
 ## Phase 2: Expression translation
 
+Initial steps:
+
+- Evaluate the upstream SQLGlot Ossie dialect (apache/ossie PR #222)
+  against the Phase 0 corpus: does it parse everything, and does its AST
+  generate valid ClickHouse SQL? Decide whether to mirror its function table
+  or wait for the merge. Do not depend on the unmerged branch.
+- Test infrastructure: DuckDB as a dev dependency for value comparison;
+  integration tests that need ClickHouse skip cleanly when no server is
+  reachable, so unit tests run anywhere.
+
+Then:
+
 - Translate field and metric expressions to ClickHouse SQL.
 - Function mapping table for the gaps found in Phase 0 (about 25 entries),
   a `TO_CHAR` format token table, and a NaN-versus-NULL policy.
