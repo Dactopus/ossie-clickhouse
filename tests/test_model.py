@@ -1,0 +1,95 @@
+import copy
+from pathlib import Path
+
+import pytest
+import yaml
+
+from ossie_clickhouse import ModelError, load_model
+from ossie_clickhouse.cli import main
+
+FIXTURE = Path(__file__).parent / "fixtures" / "tpcds.yaml"
+
+
+@pytest.fixture
+def tpcds() -> dict:
+    return yaml.safe_load(FIXTURE.read_text())
+
+
+def write(tmp_path: Path, data: dict, name: str = "m.yaml") -> Path:
+    p = tmp_path / name
+    p.write_text(yaml.safe_dump(data, sort_keys=False))
+    return p
+
+
+def test_reference_model_loads():
+    doc = load_model(FIXTURE)
+    assert doc.name == "tpcds_retail_model"
+    assert len(doc.datasets) == 5 and len(doc.metrics) == 8
+
+
+def test_json_loads(tmp_path, tpcds):
+    import json
+
+    p = tmp_path / "m.json"
+    p.write_text(json.dumps(tpcds))
+    assert load_model(p).name == "tpcds_retail_model"
+
+
+def problems_of(tmp_path, data) -> list[str]:
+    with pytest.raises(ModelError) as e:
+        load_model(write(tmp_path, data))
+    return e.value.problems
+
+
+def test_wrong_version(tmp_path, tpcds):
+    tpcds["version"] = "9.9.9"
+    assert any("unsupported version '9.9.9'" in p for p in problems_of(tmp_path, tpcds))
+
+
+def test_missing_required_field(tmp_path, tpcds):
+    del tpcds["datasets"][0]["source"]
+    assert any("datasets.0.source" in p for p in problems_of(tmp_path, tpcds))
+
+
+def test_dangling_relationship(tmp_path, tpcds):
+    tpcds["relationships"][0]["to"] = "nowhere"
+    tpcds["relationships"][1]["to_columns"] = ["a", "b"]
+    ps = problems_of(tmp_path, tpcds)
+    assert any("'nowhere' does not exist" in p for p in ps)
+    assert any("'store_sales_to_customer': from_columns and to_columns differ" in p for p in ps)
+
+
+def test_unsupported_dialect_only(tmp_path, tpcds):
+    tpcds["metrics"][0]["expression"]["dialects"][0]["dialect"] = "DAX"
+    ps = problems_of(tmp_path, tpcds)
+    assert any("metric 'total_sales': no expression in a supported dialect" in p for p in ps)
+
+
+def test_duplicates(tmp_path, tpcds):
+    tpcds["datasets"].append(copy.deepcopy(tpcds["datasets"][0]))
+    tpcds["metrics"][0]["name"] = tpcds["metrics"][1]["name"]
+    ps = problems_of(tmp_path, tpcds)
+    assert any("duplicate dataset name 'store_sales'" in p for p in ps)
+    assert any("duplicate metric name 'total_profit'" in p for p in ps)
+
+
+def test_all_problems_reported_at_once(tmp_path, tpcds):
+    tpcds["version"] = "0.0.0"
+    tpcds["relationships"][0]["to"] = "nowhere"
+    assert len(problems_of(tmp_path, tpcds)) == 2
+
+
+def test_unreadable(tmp_path):
+    p = tmp_path / "bad.yaml"
+    p.write_text("datasets: [\n")
+    with pytest.raises(ModelError) as e:
+        load_model(p)
+    assert "cannot read" in e.value.problems[0]
+
+
+def test_cli(tmp_path, tpcds, capsys):
+    assert main(["validate", str(FIXTURE)]) == 0
+    assert "ok (tpcds_retail_model" in capsys.readouterr().out
+    tpcds["version"] = "0.0.0"
+    assert main(["validate", str(write(tmp_path, tpcds))]) == 1
+    assert "1 problem(s)" in capsys.readouterr().err

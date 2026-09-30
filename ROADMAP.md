@@ -9,14 +9,14 @@ Completed 2026-09-30. Findings in [docs/phase-0-findings.md](docs/phase-0-findin
 The SQLGlot-based translation design holds. Later phases below were adjusted
 from the findings.
 
-## Phase 1: Model loader
+## Phase 1: Model loader (done)
 
-- Build on the `apache-ossie` package from the Ossie repository (Pydantic
-  models, YAML and JSON loading). Pin it as a git dependency until it is on
-  PyPI.
-- Pin the supported schema version (`0.2.0.dev0` today) and reject others
-  with a clear message.
-- CLI: `ossie-clickhouse validate <model>`.
+Completed 2026-09-30. `load_model()` builds on the `apache-ossie` package
+(git dependency until it is on PyPI), pins the schema version, and adds the
+checks upstream lacks: unique names, relationships that resolve, expressions
+in a translatable dialect. CLI: `ossie-clickhouse validate <model>`.
+Key and relationship columns are physical column names per the spec, so
+their existence is checked against the database in Phase 4, not here.
 
 ## Phase 2: Expression translation
 
