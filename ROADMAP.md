@@ -44,28 +44,50 @@ Left open, on purpose:
 
 ## Phase 3: Query planner, minimum
 
-- Semantic query API: metrics, dimensions, filters.
-- Queries over a single dataset.
-- Joins along direct `relationships` between two datasets.
-- One deterministic `SELECT` per question. Snapshot tests on generated SQL.
-- CLI: `ossie-clickhouse sql <model> --metric ... --dimension ...`.
+- Semantic query API: metrics, dimensions, filters. Filters are Ossie
+  expressions, translated like any other.
+- Reference resolution: walk each expression's AST, find `dataset.field`
+  references, resolve them against the model case-insensitively (the spec
+  normalizes unquoted identifiers to upper case, ClickHouse is
+  case-sensitive), inline field expressions, and emit physical names in
+  their real case.
+- Mapping rule from Ossie `source` names (three-part, e.g.
+  `tpcds.public.store_sales`) to ClickHouse `database.table`. Table and view
+  sources only; `source` as a query is deferred.
+- Queries over a single dataset, then joins along direct `relationships`
+  between two datasets. A join is allowed only when `to_columns` match the
+  primary key or a unique key of the target dataset, which is what makes it
+  many-to-one and safe from fan-out. The spec has no cardinality attribute,
+  so this is inferred, and anything else is rejected with a clear message.
+- Window metrics over aggregates (running totals, ranks, period deltas, as
+  in the TPC-DS reference model) pass through in the same `SELECT`. The
+  spec has no way to declare a metric's required grain, so the planner
+  cannot check that the right dimensions were requested; note as a spec gap.
+- Validation of disallowed constructs in expressions (subqueries, `SELECT`),
+  since the planner now has to trust them.
+- One deterministic `SELECT` per question. Snapshot tests on generated SQL,
+  plus execution against TPC-DS.
+- CLI: `ossie-clickhouse sql <model> --metric ... --dimension ... --filter ...`.
+- CI: GitHub Actions running the suite with a ClickHouse service container.
 
-Explicitly deferred to Phase 8: multi-fact queries, fan-out protection,
-metrics over metrics.
+Explicitly deferred to Phase 8: multi-fact queries, joins that are not
+many-to-one, metrics over metrics.
 
 ## Phase 4: Executor
 
 - Execution through `clickhouse-connect` against self-hosted and Cloud.
-- Mapping rule from Ossie `source` names (three-part, e.g.
-  `tpcds.public.store_sales`) to ClickHouse `database.table`.
+- Verify the model against the database: sources exist, key and
+  relationship columns exist.
 - Introspection: engine per table from `system.tables`, dictionaries from
   `system.dictionaries`.
 - Deduplication for `ReplacingMergeTree`. Evaluate `FINAL` against
   `argMax` on the version column and pick the default on measured cost.
 - `dictGet` for reference data held in dictionaries.
-- Overrides via `custom_extensions` with `vendor_name: clickhouse`.
+- Overrides via `custom_extensions` with `vendor_name: CLICKHOUSE`
+  (`vendor_name` is a free string in the spec; upper case by convention).
+- NaN to NULL in result sets (ClickHouse yields `nan` where SQL yields
+  `NULL`).
 - CLI: `ossie-clickhouse query ...`.
-- Integration tests against local ClickHouse in CI.
 
 ## Phase 5: Access control
 
@@ -103,5 +125,8 @@ Open-ended. Scope decided from user feedback after the first release.
 
 - Track Ossie schema changes; bump the pinned version deliberately, never
   implicitly.
+- Switch `apache-ossie` from the git pin to the PyPI release once published.
+- Switch expression parsing to the upstream dialect once apache/ossie
+  PR #222 merges; adopt the compliance suite (PR #237) when it lands.
 - Contribute ClickHouse-specific findings upstream where the standard is
   silent.
