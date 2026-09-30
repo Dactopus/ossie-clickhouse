@@ -60,8 +60,9 @@ Tests: SQL snapshots, error messages, and execution against TPC-DS,
 including a check that grouping by joined dimensions neither multiplies nor
 drops fact rows.
 
-Deferred to Phase 8: multi-fact queries, joins that are not many-to-one,
-metrics over metrics, filters on aggregates (`HAVING`), `source` as a query.
+Filters on aggregates (`HAVING`) come before the first release. Multi-fact
+queries, joins that are not many-to-one, metrics over metrics and `source`
+as a query are listed under "Not scheduled" below.
 
 ## Phase 4: Executor (done)
 
@@ -127,7 +128,22 @@ Tests: the summary, search and describe views against the library
 directly; the four tools through the SDK's in-memory client against
 TPC-DS; a raw stdio handshake was checked by hand.
 
-## Phase 6b: MCP server, remote (after the first release)
+## Phase 7: First public release
+
+- Filters on aggregates (`HAVING`): an agent asks "brands with sales over
+  X" on day one, the spec allows it, and it is a small planner change.
+- Packaging and publication to PyPI.
+- Documentation: installation, model authoring for ClickHouse, CLI, MCP
+  setup with desktop agents, access control through ClickHouse.
+- Contribution guide.
+- Repository made public.
+
+## Not scheduled
+
+Everything below is a recorded decision, not a phase: phases are what we
+do on our own initiative, these wait for something outside the project.
+
+### Waiting for a trigger: MCP server, remote
 
 Streamable HTTP with OAuth 2.1, built only when a real deployment asks for
 it. Design fixed now so Phase 6 does not paint us into a corner:
@@ -151,22 +167,38 @@ it. Design fixed now so Phase 6 does not paint us into a corner:
 - Enterprise-Managed Authorization extension: support once clients carry
   it; it changes how the token is obtained, not how it is verified.
 
-## Phase 7: First public release
+### Works today through explicit expressions; declarative form waits for the standard
 
-- Packaging and publication to PyPI.
-- Documentation: installation, model authoring for ClickHouse, CLI, MCP
-  setup with desktop agents, access control through ClickHouse.
-- Contribution guide.
-- Repository made public.
+Nothing here blocks a business question. The model author writes the
+expression by hand; what is missing is a way to declare it once so agents
+and authors get it for free. The schema (`0.2.0.dev0`) has no such
+attributes yet, and inventing our own risks carrying two semantics when
+upstream defines theirs.
 
-## Phase 8: Query planner, full
+- Time grain. Today: a field per grain (`DATE_TRUNC('month', ...)`) or the
+  calendar's own columns (`date_dim.d_year`, `d_moy`). Missing: an agent
+  asking for "by week" without a predefined field; the spec only has
+  `is_time`.
+- Derived dimensions (age group, price band). Today: a field with `CASE`.
+  Missing: nothing functional; a declarative form may follow in the spec.
+- Metrics over metrics (average ticket = sales / tickets). Today: one
+  expression repeating the sub-expressions. Missing: referencing a metric
+  by name; the spec has no such reference.
+- Join cardinality. Today: many-to-one inferred from primary and unique
+  keys, enough for star schemas. Missing: a declared attribute; the spec
+  has none.
 
-Open-ended. Scope decided from user feedback after the first release.
+### Backlog, on demand
 
-- Multi-fact queries with conformed dimensions.
-- Fan-out protection for one-to-many and many-to-many joins.
-- Metrics defined over other metrics.
-- Derived dimensions and time grain handling.
+Known how to build, not known whether anyone needs it. Each is built on
+the first real request, not before.
+
+- Multi-fact queries with conformed dimensions (store against web sales in
+  one question): aggregate each fact at the dimension grain, join the
+  results.
+- Fan-out protection for one-to-many and many-to-many joins: semi-joins
+  for filters, symmetric aggregates for metrics.
+- `source` as a query.
 
 ## Ongoing
 
