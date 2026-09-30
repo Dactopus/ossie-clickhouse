@@ -106,30 +106,26 @@ suggestions; row policies change results; column grants hide fields and
 the relationships and metrics resting on them; the policy file hides a
 metric for a role and only that role.
 
-## Phase 6: MCP server, local
+## Phase 6: MCP server, local (done)
 
-MCP (spec 2026-07-28) defines two transports: stdio for a subprocess the
-agent launches, Streamable HTTP for a remote server. The spec ties the
-access model to the transport: stdio servers take credentials from the
-environment and must not do OAuth; HTTP servers are OAuth 2.1 resource
-servers. This phase is the stdio half, which is what every desktop agent
-uses.
+Completed 2026-09-30. `mcp_server.py` on the MCP Python SDK 2.x, behind the
+`[mcp]` extra; `ossie-clickhouse serve <model>` runs it over stdio with
+ClickHouse credentials from the environment or `--url`, so one process is
+one ClickHouse user and Phase 5 applies unchanged. Four tools, each a
+library call: `list_model` (compact summary with descriptions and
+synonyms), `search_model` (by name, description or synonym),
+`describe_object` (dataset with fields and relationships, or metric with
+its expression, with AI hints), `query` (rows plus the SQL, sorted by the
+first metric unless `order_by` says otherwise, because agents that rank or
+total rows themselves get it wrong). Errors are
+returned as results with an `error` field so the planner's suggestions
+reach the agent verbatim. The "who is calling" seam is `client_factory`
+in `build_server()`. Setup for desktop agents in
+[docs/mcp-setup.md](docs/mcp-setup.md).
 
-- Optional extra `ossie-clickhouse[mcp]`; the core library imports without
-  the MCP SDK.
-- `ossie-clickhouse serve <model>` over stdio. ClickHouse credentials from
-  the environment; one process, one ClickHouse user, so Phase 5 applies as
-  is.
-- Tools: list the model (compact, with descriptions and synonyms), search
-  objects by name or synonym, describe one object with its `ai_context`,
-  run a semantic query. Models with hundreds of objects must not require
-  dumping everything into the agent's context.
-- Planner and executor errors are returned as tool results with their
-  "did you mean" suggestions, so an agent can correct itself in one turn.
-- One seam kept explicit: "who is calling" to "ClickHouse client" is a
-  single function, so Phase 6b can replace it without touching the tools.
-- Tests through the SDK's client against an in-process server; a manual
-  run from a desktop agent against TPC-DS.
+Tests: the summary, search and describe views against the library
+directly; the four tools through the SDK's in-memory client against
+TPC-DS; a raw stdio handshake was checked by hand.
 
 ## Phase 6b: MCP server, remote (after the first release)
 

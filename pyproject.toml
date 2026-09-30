@@ -13,11 +13,14 @@ dependencies = [
     "clickhouse-connect>=0.8",
 ]
 
+[project.optional-dependencies]
+mcp = ["mcp>=2,<3"]
+
 [project.scripts]
 ossie-clickhouse = "ossie_clickhouse.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6", "duckdb>=1.0"]
+dev = ["pytest>=8", "ruff>=0.6", "duckdb>=1.0", "mcp>=2,<3"]
 
 [build-system]
 requires = ["hatchling"]

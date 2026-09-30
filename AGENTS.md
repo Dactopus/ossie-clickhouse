@@ -68,8 +68,11 @@ Python library with a CLI entry point. Details in the README section
 
 - Layering: model loader -> translator -> planner -> executor -> MCP adapter.
   Lower layers never import higher ones.
-- The MCP server is a thin adapter over the public library API. No logic
-  lives only in the MCP layer.
+- The MCP server (`mcp_server.py`, `[mcp]` extra) is a thin adapter over
+  the library. No logic lives only in the MCP layer; each tool is one
+  library call, and errors go back as results with an `error` field, never
+  as exceptions, so suggestions reach the agent. Keep `client_factory` as
+  the only place that decides which ClickHouse connection a caller gets.
 - Access control is ClickHouse's. Queries run as the connected user; the
   model is trimmed (`access.py`) to the sources and columns that user can
   read, as revealed by `system.tables` and `system.columns`. A hidden object
@@ -135,6 +138,7 @@ uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml [--url http://127.0.0
 uv run ossie-clickhouse sql tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand
 uv run ossie-clickhouse query tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand --json
 uv run ossie-clickhouse query model.yaml -m revenue --url http://analyst:secret@host:8123 --policy policy.yaml
+uv run ossie-clickhouse serve tests/fixtures/tpcds.yaml   # MCP over stdio
 ```
 
 Access-control tests create users and need SQL access management on the
@@ -149,4 +153,4 @@ package level only when a module outgrows one file.
 
 ## Repository status
 
-Phases 0 to 5 done (see [ROADMAP.md](ROADMAP.md)).
+Phases 0 to 6 done (see [ROADMAP.md](ROADMAP.md)).
