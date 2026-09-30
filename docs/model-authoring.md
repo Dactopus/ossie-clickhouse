@@ -4,7 +4,7 @@ A model for ossie-clickhouse is an ordinary Ossie model: the standard's
 [specification](https://github.com/apache/ossie) says what goes in it, and
 nothing ClickHouse-specific is required. This page lists what the executor
 works out on its own, and the few things worth knowing when the target is
-ClickHouse. The TPC-DS reference model in
+[ClickHouse](https://clickhouse.com/docs). The TPC-DS reference model in
 [tests/fixtures/tpcds.yaml](../tests/fixtures/tpcds.yaml) is a complete
 example.
 
@@ -86,9 +86,12 @@ just as well.
 
 ## Deduplication
 
-Tables with an engine in the `Replacing*` family keep change history and
-are read with `FINAL`, so a metric sees each row once. This is learned
-from `system.tables`. To read such a table raw (for example, to count
+Tables with an engine in the
+[`Replacing*`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
+family keep change history and are read with
+[`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier), so a
+metric sees each row once. This is learned from
+[`system.tables`](https://clickhouse.com/docs/operations/system-tables/tables). To read such a table raw (for example, to count
 versions), turn it off per dataset:
 
 ```yaml
@@ -99,14 +102,17 @@ versions), turn it off per dataset:
       data: '{"dedup": "none"}'
 ```
 
-`custom_extensions` with `vendor_name: CLICKHOUSE` is the namespace this
-project owns; `data` is JSON. `dedup` is the only key today.
+`custom_extensions`, the spec's escape hatch for vendor settings, with
+`vendor_name: CLICKHOUSE` is the namespace this project owns; `data` is
+JSON. `dedup` is the only key today.
 
 ## Dictionaries
 
-A dataset whose source is a ClickHouse dictionary with a single key, joined
-on that key, is read with `dictGetOrNull` and the join disappears. This is
-learned from `system.dictionaries`, which the connected user needs a grant
+A dataset whose source is a ClickHouse [dictionary](https://clickhouse.com/docs/sql-reference/dictionaries)
+with a single key, joined on that key, is read with
+[`dictGetOrNull`](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions) and the
+join disappears. This is learned from
+[`system.dictionaries`](https://clickhouse.com/docs/operations/system-tables/dictionaries), which the connected user needs a grant
 to read; without it the dictionary is joined like a table, which is still
 correct, only slower.
 

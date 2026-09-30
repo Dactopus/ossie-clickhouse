@@ -1,6 +1,7 @@
 # MCP setup for desktop agents
 
-The server speaks MCP over stdio: the agent launches it as a subprocess.
+The server speaks [MCP](https://modelcontextprotocol.io) over stdio: the
+agent launches it as a subprocess.
 ClickHouse credentials come from the environment (`OSSIE_CLICKHOUSE_URL`,
 default `http://127.0.0.1:8123`) or `--url`. Everything the agent sees and
 runs is limited to that ClickHouse user.
@@ -8,7 +9,8 @@ runs is limited to that ClickHouse user.
 ## Claude Desktop
 
 Install with the `[mcp]` extra (see the README), then add to
-`claude_desktop_config.json` (Settings, Developer, Edit Config). Replace
+`claude_desktop_config.json`
+([Settings, Developer, Edit Config](https://modelcontextprotocol.io/quickstart/user)). Replace
 the placeholders: the absolute path of the command (`which
 ossie-clickhouse`; desktop apps run with a minimal `PATH`), the absolute
 path of the model, and the ClickHouse URL with the credentials of the
@@ -40,7 +42,8 @@ example "sales by item category in 1998"; the agent should call
 
 ## Claude Code and other clients
 
-Any MCP client that supports stdio works the same way. For Claude Code:
+Any MCP client that supports stdio works the same way. For
+[Claude Code](https://docs.claude.com/en/docs/claude-code/mcp):
 
 ```bash
 claude mcp add ossie-clickhouse -e OSSIE_CLICKHOUSE_URL=http://USER:PASSWORD@127.0.0.1:8123 -- \
@@ -62,4 +65,5 @@ printf '%s\n' \
 The process runs as one ClickHouse user. Give each agent its own user with
 the grants and row policies it should have; the model it sees is trimmed
 to match. `--policy policy.yaml` hides further objects per user or role.
+Details in [access-control.md](access-control.md).
 A remote, multi-user server with OAuth is designed but not scheduled (see ROADMAP.md, "Not scheduled").

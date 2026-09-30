@@ -1,10 +1,11 @@
 # ossie-clickhouse
 
 An implementation of the [Apache Ossie](https://github.com/apache/ossie)
-semantic model standard for ClickHouse. It reads an Ossie description of
+semantic model standard for [ClickHouse](https://clickhouse.com/docs). It reads an Ossie description of
 your data, answers questions asked in business terms (metrics, dimensions,
 filters) with one ClickHouse query, and serves the description and the
-queries to AI agents over MCP.
+queries to AI agents over [MCP](https://modelcontextprotocol.io), the
+Model Context Protocol.
 
 ## Why
 
@@ -33,8 +34,9 @@ CLI work without them.
 
 ## Quick start
 
-Point it at a model and a ClickHouse. The TPC-DS reference model from the
-Ossie repository is in [tests/fixtures/tpcds.yaml](tests/fixtures/tpcds.yaml).
+Point it at a model and a ClickHouse. The
+[TPC-DS reference model](https://github.com/apache/ossie/blob/main/examples/tpcds_semantic_model.yaml)
+from the Ossie repository is in [tests/fixtures/tpcds.yaml](tests/fixtures/tpcds.yaml).
 ClickHouse credentials go in the URL or in `OSSIE_CLICKHOUSE_URL`
 (default `http://127.0.0.1:8123`).
 
@@ -62,16 +64,20 @@ print(r.sql, r.columns, r.rows[:3])
 - Datasets come from `source`, joins from `relationships`. One root
   dataset, `LEFT JOIN` to the dimensions the question touches, only along
   relationships whose `to_columns` are a primary or unique key of the
-  target (many-to-one). `SETTINGS join_use_nulls = 1` so unmatched rows
-  get NULL, not ClickHouse defaults.
+  target (many-to-one). `SETTINGS`
+  [`join_use_nulls = 1`](https://clickhouse.com/docs/operations/settings/settings#join_use_nulls)
+  so unmatched rows get NULL, not ClickHouse defaults.
 - Filters over fields go to `WHERE`; filters that name a metric or contain
   an aggregate (`total_sales > 1000000`) go to `HAVING`.
-- Tables with a `Replacing*` engine are read with `FINAL`; single-key
-  dictionaries are read with `dictGetOrNull` instead of a join. Both are
-  learned from `system.tables` and `system.dictionaries`, not configured.
+- Tables with a [`Replacing*`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
+  engine are read with [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier);
+  single-key [dictionaries](https://clickhouse.com/docs/sql-reference/dictionaries) are read with
+  `dictGetOrNull` instead of a join. Both are learned from `system.tables`
+  and `system.dictionaries`, not configured.
 - Expressions in `OSSIE_SQL_2026` or `ANSI_SQL` are translated on the
-  SQLGlot AST; the spec's function catalog is mapped to ClickHouse
-  equivalents and checked by value against DuckDB and the spec text.
+  [SQLGlot](https://github.com/tobymao/sqlglot) AST; the spec's function
+  catalog is mapped to ClickHouse equivalents and checked by value against
+  [DuckDB](https://duckdb.org) and the spec text.
 - Names resolve case-insensitively; SQL uses the physical names as the
   model writes them. The same question and model always give the same SQL.
 - Errors name the nearest known metric, field or dataset, so an agent can
@@ -98,7 +104,7 @@ name or an aggregate means `HAVING`), `-o "name [desc]"`, `-l limit`.
 - [Access control](docs/access-control.md): ClickHouse users, roles and
   row policies decide; the policy file hides more.
 - [MCP setup](docs/mcp-setup.md): Claude Desktop, Claude Code and other
-  stdio clients.
+  stdio MCP clients.
 - [Roadmap](ROADMAP.md) and [contributing](CONTRIBUTING.md).
 
 ## What it is not

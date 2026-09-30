@@ -1,20 +1,21 @@
 # Access control
 
-ClickHouse decides who sees what. This project adds no users, no
-authentication and no permissions of its own; it makes the model agree
+[ClickHouse](https://clickhouse.com/docs/operations/access-rights) decides who sees what. This
+project adds no users, no authentication and no permissions of its own; it makes the model agree
 with what ClickHouse already enforces.
 
 ## Queries run as the connected user
 
 The CLI and the MCP server connect with the credentials in the URL
 (`http://user:password@host:8123`, or `OSSIE_CLICKHOUSE_URL`). Every query
-runs as that user, so table grants, column grants and row policies apply
+runs as that user, so table grants, column grants and
+[row policies](https://clickhouse.com/docs/sql-reference/statements/create/row-policy) apply
 exactly as they would to a hand-written query.
 
 ## The model is trimmed to match
 
-ClickHouse lists in `system.tables` and `system.columns` only what the
-connected user may read. Before planning, the model is cut down to that:
+ClickHouse lists in [`system.tables`](https://clickhouse.com/docs/operations/system-tables/tables)
+and `system.columns` only what the connected user may read. Before planning, the model is cut down to that:
 
 - a dataset whose source the user cannot read is removed;
 - a field whose column the user cannot read is removed;
@@ -38,10 +39,11 @@ CREATE ROW POLICY eu ON shop.orders FOR SELECT USING region = 'EU' TO analyst;
 ```
 
 Then run `ossie-clickhouse serve` (or `query`) with that user's URL. The
-MCP server is one process per user; a shared multi-user server with OAuth
+[MCP](https://modelcontextprotocol.io) server is one process per user; a shared multi-user server with OAuth
 is designed but not scheduled (see the roadmap).
 
-Reading `system.dictionaries` needs an explicit grant. Without it,
+Reading [`system.dictionaries`](https://clickhouse.com/docs/operations/system-tables/dictionaries)
+needs an explicit grant. Without it,
 dictionaries are joined as tables, which is correct but slower.
 
 ## Policy file: hide more than grants do

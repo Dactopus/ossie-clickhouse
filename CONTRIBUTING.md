@@ -23,29 +23,45 @@ uv sync
 uv run pytest -m "not integration"     # unit tests, no server needed
 ```
 
-Integration tests need a ClickHouse at `OSSIE_CLICKHOUSE_URL` (default
-`http://127.0.0.1:8123`) and skip without one. Access-control tests also
-need SQL access management for the connecting user:
+Integration tests need a [ClickHouse](https://clickhouse.com/docs) server reachable over
+[HTTP](https://clickhouse.com/docs/interfaces/http) at `OSSIE_CLICKHOUSE_URL` (default
+`http://127.0.0.1:8123`) and skip without one. Any ClickHouse 24 or later
+works; access-control tests also need
+[SQL access management](https://clickhouse.com/docs/operations/access-rights#enabling-access-control)
+enabled for the connecting user, and skip otherwise. Without a server at
+hand, the [official Docker image](https://clickhouse.com/docs/install/docker) gives one with
+access management on:
 
 ```bash
 docker run -d --name ch -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 clickhouse/clickhouse-server
 uv run pytest
 ```
 
-Tests against the TPC-DS reference model need the `tpcds` database with
-the five tables the model uses, and skip when it is absent (CI runs
-without it). DuckDB, already a dev dependency, generates the data at
-scale factor 1:
+Tests against the [TPC-DS reference model](https://github.com/apache/ossie/blob/main/examples/tpcds_semantic_model.yaml)
+need the `tpcds` database with the five tables the model uses, and skip
+when it is absent (CI runs without it). [DuckDB](https://duckdb.org),
+already a dev dependency, generates the data at scale factor 1 with its
+[tpcds extension](https://duckdb.org/docs/stable/core_extensions/tpcds):
 
 ```bash
 mkdir -p /tmp/tpcds && uv run python -c "
 import duckdb; c = duckdb.connect(); c.execute('INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=1)')
 for t in ['store_sales', 'date_dim', 'customer', 'item', 'store']:
     c.execute(f\"COPY {t} TO '/tmp/tpcds/{t}.parquet' (FORMAT PARQUET)\")"
-docker cp /tmp/tpcds/. ch:/var/lib/clickhouse/user_files/
-docker exec ch clickhouse-client -q "CREATE DATABASE IF NOT EXISTS tpcds"
+```
+
+Copy the Parquet files into the server's
+[`user_files_path`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#user_files_path)
+(`SELECT value FROM system.server_settings WHERE name = 'user_files_path'`;
+for the Docker container above, `docker cp /tmp/tpcds/. ch:/var/lib/clickhouse/user_files/`),
+then load them with the [`file()`](https://clickhouse.com/docs/sql-reference/table-functions/file)
+table function:
+
+```bash
+URL=http://127.0.0.1:8123
+curl -s "$URL" --data-binary "CREATE DATABASE IF NOT EXISTS tpcds"
 for t in store_sales date_dim customer item store; do
-  docker exec ch clickhouse-client -q "CREATE TABLE tpcds.$t ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM file('$t.parquet', Parquet)"
+  curl -s "$URL" --data-binary "CREATE TABLE tpcds.$t ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM file('$t.parquet', Parquet)"
 done
 ```
 
@@ -59,7 +75,7 @@ uv run ruff format src tests
 [AGENTS.md](AGENTS.md) is the full list; the ones that matter most for a
 pull request:
 
-- The Ossie description is the single source of truth. Semantics that
+- The [Ossie](https://github.com/apache/ossie) description is the single source of truth. Semantics that
   belong in the model are never hardcoded.
 - Follow the standard exactly. When ClickHouse differs from the spec,
   handle it in the translator; do not change what the standard means.
@@ -79,11 +95,11 @@ pull request:
 | Path | What |
 | --- | --- |
 | `src/ossie_clickhouse/model.py` | Load and validate a model on top of `apache-ossie`. |
-| `src/ossie_clickhouse/translate.py` | Ossie expression to ClickHouse SQL, on the SQLGlot AST. |
+| `src/ossie_clickhouse/translate.py` | Ossie expression to ClickHouse SQL, on the [SQLGlot](https://github.com/tobymao/sqlglot) AST. |
 | `src/ossie_clickhouse/planner.py` | Question to one `SELECT`. |
 | `src/ossie_clickhouse/executor.py` | Introspection, execution, result cleanup. |
 | `src/ossie_clickhouse/access.py` | Trim the model to the caller's rights; policy file. |
-| `src/ossie_clickhouse/mcp_server.py` | MCP tools, behind the `[mcp]` extra. |
+| `src/ossie_clickhouse/mcp_server.py` | [MCP](https://modelcontextprotocol.io) tools, behind the `[mcp]` extra. |
 | `src/ossie_clickhouse/cli.py` | `ossie-clickhouse` command. |
 | `tests/` | pytest; fixtures in `tests/fixtures/`. |
 
