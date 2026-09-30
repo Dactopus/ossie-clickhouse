@@ -53,8 +53,8 @@ def summary(model: OssieDocument) -> dict[str, Any]:
         "metrics": [_brief(m) for m in model.metrics or []],
         "relationships": [f"{r.from_dataset} -> {r.to}" for r in model.relationships or []],
         "usage": (
-            "Call describe(name) for a dataset's fields or a metric's definition, "
-            "search(text) to find objects by name or synonym, then query(...)."
+            "Call describe_object(name) for a dataset's fields or a metric's definition, "
+            "search_model(text) to find objects by name or synonym, then query(...)."
         ),
     }
 
@@ -171,8 +171,6 @@ def build_server(
         (a window metric such as a rank cannot be filtered: select it instead);
         order_by lists metric or dimension names, "name desc" for descending,
         default: first metric descending. Returns rows and the SQL."""
-        if not order_by and metrics:
-            order_by = [f"{metrics[0]} desc"]
         try:
             r = executor.execute(
                 Query(tuple(metrics), tuple(dimensions), tuple(filters), tuple(order_by), limit)

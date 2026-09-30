@@ -145,7 +145,7 @@ _ANONYMOUS = {
 }
 
 
-def _rewrite(node: exp.Expression) -> exp.Expression:
+def rewrite(node: exp.Expression) -> exp.Expression:
     if isinstance(node, exp.Anonymous):
         fn = _ANONYMOUS.get(node.name.upper())
         return fn(node.expressions) if fn else node
@@ -205,7 +205,7 @@ def _rewrite(node: exp.Expression) -> exp.Expression:
 def to_clickhouse(expression: str | exp.Expression) -> str:
     """ClickHouse SQL for an Ossie expression."""
     tree = parse(expression) if isinstance(expression, str) else expression
-    return tree.transform(_rewrite).sql(dialect="clickhouse")
+    return tree.transform(rewrite).sql(dialect="clickhouse")
 
 
 def translate(expression: OssieExpression) -> str:

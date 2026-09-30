@@ -17,9 +17,11 @@ classifiers = [
 dependencies = [
     # Not on PyPI yet; pinned to the Ossie main revision the code was written against.
     "apache-ossie @ git+https://github.com/apache/ossie.git@adfa9e4#subdirectory=python",
-    "PyYAML>=6.0",
-    "sqlglot>=27",
-    "clickhouse-connect>=0.8",
+    "PyYAML>=6,<7",
+    # Upper bounds: the translator builds on SQLGlot AST classes and parser
+    # internals, and clickhouse-connect's client options; both move between majors.
+    "sqlglot>=30,<31",
+    "clickhouse-connect>=1,<2",
 ]
 
 [project.urls]

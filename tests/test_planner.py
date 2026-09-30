@@ -44,7 +44,7 @@ def test_dimension_filter_join_snapshot():
         "LEFT JOIN tpcds.date_dim AS date_dim ON store_sales.ss_sold_date_sk = date_dim.d_date_sk "
         "LEFT JOIN tpcds.item AS item ON store_sales.ss_item_sk = item.i_item_sk "
         "WHERE date_dim.d_year = 1998 "
-        "GROUP BY item.i_brand LIMIT 10 SETTINGS join_use_nulls = 1"
+        "GROUP BY item.i_brand ORDER BY total_sales DESC LIMIT 10 SETTINGS join_use_nulls = 1"
     )
 
 
@@ -70,6 +70,11 @@ def test_window_metric_passes_through():
 
 
 def test_order_by():
+    # Default: first metric descending, only when there are rows to rank.
+    q = Query(metrics=("total_profit", "total_sales"), dimensions=("item.i_brand",))
+    assert "ORDER BY total_profit DESC" in P.sql(q)
+    assert "ORDER BY" not in P.sql(Query(metrics=("total_sales",)))
+    assert "ORDER BY" not in P.sql(Query(dimensions=("item.i_brand",)))
     q = Query(
         metrics=("total_sales",), dimensions=("item.i_brand",), order_by=("total_sales desc",)
     )
@@ -197,7 +202,7 @@ def test_aggregate_filters_go_to_having():
     assert sql.endswith(
         "WHERE date_dim.d_year = 1998 GROUP BY item.i_brand "
         "HAVING SUM(store_sales.ss_ext_sales_price) > 1000000 AND COUNT(*) > 10 "
-        "SETTINGS join_use_nulls = 1"
+        "ORDER BY total_sales DESC SETTINGS join_use_nulls = 1"
     )
     # No dimensions: HAVING without GROUP BY is still one SELECT.
     assert P.sql(Query(metrics=("total_sales",), filters=("total_sales > 1",))).endswith(
@@ -225,7 +230,8 @@ def test_filter_on_unselected_metric_adds_its_join():
     assert "LEFT JOIN tpcds.store AS store ON store_sales.ss_store_sk = store.s_store_sk" in sql
     assert sql.endswith(
         "GROUP BY item.i_brand HAVING SUM(store_sales.ss_ext_sales_price) / "
-        "nullIf(SUM(store.s_number_employees), 0) > 1 SETTINGS join_use_nulls = 1"
+        "nullIf(SUM(store.s_number_employees), 0) > 1 ORDER BY total_sales DESC "
+        "SETTINGS join_use_nulls = 1"
     )
 
 
@@ -313,7 +319,7 @@ def test_catalog_final_and_dictionary():
         "FROM tpcds.store_sales AS store_sales FINAL "
         "GROUP BY dictGetOrNull('tpcds.item', 'i_brand', store_sales.ss_item_sk), "
         "CASE WHEN dictHas('tpcds.item', store_sales.ss_item_sk) THEN store_sales.ss_item_sk "
-        "ELSE NULL END SETTINGS join_use_nulls = 1"
+        "ELSE NULL END ORDER BY total_sales DESC SETTINGS join_use_nulls = 1"
     )
     # A dictionary joined on something other than its key is a plain LEFT JOIN.
     catalog["item"] = TableInfo("Dictionary", frozenset(), dictionary_key="i_item_id")
