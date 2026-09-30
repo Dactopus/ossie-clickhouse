@@ -1,51 +1,117 @@
 # ossie-clickhouse
 
-An open-source implementation of the [Apache Ossie](https://github.com/apache/ossie) semantic model standard for ClickHouse.
+An implementation of the [Apache Ossie](https://github.com/apache/ossie)
+semantic model standard for ClickHouse. It reads an Ossie description of
+your data, answers questions asked in business terms (metrics, dimensions,
+filters) with one ClickHouse query, and serves the description and the
+queries to AI agents over MCP.
 
-## What it is
+## Why
 
-ossie-clickhouse makes data in ClickHouse understandable to AI agents and other tools. It takes a data description written in Apache Ossie, the open standard that records what tables and fields mean, how they relate, and how metrics are defined, and turns a question like "net revenue by channel for September" into a correct ClickHouse query. Whoever asks, the answer follows the same definitions.
+A company connects an AI assistant to its database and the assistant gets
+things wrong: hundreds of tables with no explanations, three columns with
+the same name, a different "revenue" in every department. Apache Ossie
+fixes this at the level of description: one open, portable definition of
+what tables and fields mean, how they relate and how metrics are computed.
+ossie-clickhouse executes those descriptions on ClickHouse, which the
+standard does not cover itself, and handles the ClickHouse specifics
+(tables that keep change history, reference data in dictionaries, join
+resolution) so that neither the model author nor the agent has to.
 
-## The problem it solves
+## Install
 
-A company connects an AI assistant to its database and the assistant gets things wrong: two hundred tables with no explanations, three columns with the same name, a different "revenue" in every department. The assistant guesses instead of knowing.
+Python 3.11 or later. Not on PyPI yet: the `apache-ossie` package this
+builds on is a git dependency until upstream publishes it, and PyPI does
+not accept packages with git dependencies.
 
-Apache Ossie solves this at the level of description: one definition of revenue for everyone. But until now there was no way to execute such descriptions on ClickHouse, and ClickHouse is not among the engines the standard lists. ossie-clickhouse closes that gap: the first implementation of the standard for ClickHouse, in the same way the community extension for DuckDB is for DuckDB.
+```bash
+pip install "ossie-clickhouse[mcp] @ git+https://github.com/Dactopus/ossie-clickhouse"
+```
 
-## Who it is for
+Leave out `[mcp]` to skip the MCP server and its SDK; the library and the
+CLI work without them.
 
-- **Companies with data in ClickHouse** that want an AI assistant to answer from their data rather than invent it. They describe the database once, in an open format, and any agent gets both the description and correct answers through this package.
-- **Vendors building tools on top of ClickHouse**, including BI and AI assistants. Instead of each inventing its own way to understand customer data, they read a shared standard through a ready implementation.
-- **Data engineers** who have already described their models in Ossie for Snowflake or dbt and want to bring them to ClickHouse without rewriting.
+## Quick start
 
-## What it does
+Point it at a model and a ClickHouse. The TPC-DS reference model from the
+Ossie repository is in [tests/fixtures/tpcds.yaml](tests/fixtures/tpcds.yaml).
+ClickHouse credentials go in the URL or in `OSSIE_CLICKHOUSE_URL`
+(default `http://127.0.0.1:8123`).
 
-1. Reads and validates a data description against the Ossie standard.
-2. Translates metric definitions from the standard's portable expression language into ClickHouse SQL, and handles ClickHouse specifics on its own: which tables keep change history and need deduplication, which reference data lives in dictionaries. Users do not need to know about any of this.
-3. Accepts a question in business terms: metrics, dimensions, filters. Works out which tables to join and how, and runs the query.
-4. Serves the data description, including the standard's AI hints, to AI agents, and accepts their questions over MCP, the common protocol agents use to talk to external systems. Who may see what is decided by ClickHouse's own users, roles and row policies; the model each caller sees is trimmed to match.
+```bash
+ossie-clickhouse validate model.yaml --url http://user:password@host:8123
+ossie-clickhouse sql model.yaml -m total_sales -d item.i_brand -f "date_dim.d_year = 1998"
+ossie-clickhouse query model.yaml -m total_sales -d item.i_brand -f "total_sales > 1000000" --json
+ossie-clickhouse serve model.yaml        # MCP over stdio, see docs/mcp-setup.md
+```
+
+From Python:
+
+```python
+from ossie_clickhouse import load_model
+from ossie_clickhouse.executor import Executor, connect
+from ossie_clickhouse.planner import Query
+
+ex = Executor(connect("http://user:password@host:8123"), load_model("model.yaml"))
+r = ex.execute(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+print(r.sql, r.columns, r.rows[:3])
+```
+
+## How a question becomes SQL
+
+- Datasets come from `source`, joins from `relationships`. One root
+  dataset, `LEFT JOIN` to the dimensions the question touches, only along
+  relationships whose `to_columns` are a primary or unique key of the
+  target (many-to-one). `SETTINGS join_use_nulls = 1` so unmatched rows
+  get NULL, not ClickHouse defaults.
+- Filters over fields go to `WHERE`; filters that name a metric or contain
+  an aggregate (`total_sales > 1000000`) go to `HAVING`.
+- Tables with a `Replacing*` engine are read with `FINAL`; single-key
+  dictionaries are read with `dictGetOrNull` instead of a join. Both are
+  learned from `system.tables` and `system.dictionaries`, not configured.
+- Expressions in `OSSIE_SQL_2026` or `ANSI_SQL` are translated on the
+  SQLGlot AST; the spec's function catalog is mapped to ClickHouse
+  equivalents and checked by value against DuckDB and the spec text.
+- Names resolve case-insensitively; SQL uses the physical names as the
+  model writes them. The same question and model always give the same SQL.
+- Errors name the nearest known metric, field or dataset, so an agent can
+  recover from a typo without help.
+
+## CLI
+
+| Command | What it does |
+| --- | --- |
+| `validate <model> [--url]` | Check the file; with `--url`, also that every source, column and relationship column exists in ClickHouse. |
+| `sql <model> ...` | Print the SQL for a question without running it. |
+| `query <model> ... [--json]` | Run it; TSV or JSON rows. |
+| `serve <model>` | MCP server over stdio (needs the `[mcp]` extra). |
+
+Question options for `sql` and `query`: `-m metric` (repeatable),
+`-d dataset.field` (repeatable), `-f condition` (repeatable; a metric
+name or an aggregate means `HAVING`), `-o "name [desc]"`, `-l limit`.
+`--url` and `--policy` apply to anything that talks to ClickHouse.
+
+## Documentation
+
+- [Model authoring for ClickHouse](docs/model-authoring.md): sources,
+  keys, expressions, deduplication, dictionaries, validation.
+- [Access control](docs/access-control.md): ClickHouse users, roles and
+  row policies decide; the policy file hides more.
+- [MCP setup](docs/mcp-setup.md): Claude Desktop, Claude Code and other
+  stdio clients.
+- [Roadmap](ROADMAP.md) and [contributing](CONTRIBUTING.md).
 
 ## What it is not
 
-It is not an analytics assistant: no chat, no charts, no user interface. It provides access and understanding; the interface is someone else's job. It is not a data warehouse or a loader: the data must already be in ClickHouse.
+No chat, no charts, no user interface: it provides access and
+understanding, the interface is someone else's job. No data loading: the
+data must already be in ClickHouse.
 
-## Proposed technical approach
+## Status
 
-This is the intended design, not a description of working code.
-
-- **Packaging.** A Python library with a command-line entry point. The MCP server is part of the same package behind an optional extra (`ossie-clickhouse[mcp]`), so the library can be imported without pulling in the MCP SDK.
-- **Model loading.** Reads Ossie YAML or JSON and validates it against the official JSON schema from the Ossie repository. The supported schema version is pinned and checked explicitly, since the standard is still moving.
-- **Expression translation.** Metric and field expressions are taken in `OSSIE_SQL_2026`, the standard's portable dialect, and translated to ClickHouse SQL with [SQLGlot](https://github.com/tobymao/sqlglot), which already has a ClickHouse dialect. An Ossie dialect for SQLGlot is being contributed upstream (apache/ossie PR #222); until it lands, `OSSIE_SQL_2026` is parsed as ANSI SQL, of which it is a subset. If a model carries no `OSSIE_SQL_2026` expression, the `ANSI_SQL` one is used.
-- **Query planning.** A semantic query (metrics, dimensions, filters) is resolved against the model: datasets come from `source`, join paths from `relationships`, and the result is a single deterministic `SELECT`. Same model and same question always produce the same SQL.
-- **ClickHouse specifics by introspection.** The executor asks ClickHouse rather than the user: `system.tables` tells it each table's engine (so it knows when a `ReplacingMergeTree` needs deduplication), and `system.dictionaries` tells it which reference data can be read with `dictGet`. Overrides live in the model's `custom_extensions` under `vendor_name: CLICKHOUSE`, a namespace owned by this project.
-- **Execution.** Queries run through `clickhouse-connect` over HTTP, against self-hosted ClickHouse or ClickHouse Cloud alike.
-- **Access control.** Delegated to ClickHouse. Queries run as the ClickHouse user who is asking, so its grants and row policies apply, and the model served to that user is trimmed to the sources they can read. An optional local file adds model-level restrictions (hide a metric from a role) that the database cannot express. Identity comes from the connection or the MCP transport; this project authenticates no one.
-- **MCP server.** A thin adapter over the library's public API exposing a handful of tools: list the model, describe an object with its `ai_context`, run a semantic query.
-- **Testing.** Against the TPC-DS reference model shipped with the Ossie repository, loaded into a local ClickHouse, plus unit tests for translation.
-
-## Terms
-
-Open source under Apache 2.0. Installs with one command. Works with any ClickHouse, self-hosted or cloud, and with any description in the Ossie format. No runtime dependencies beyond ClickHouse itself and a few Python libraries.
+Pre-release. The supported Ossie schema version is pinned (`0.2.0.dev0`)
+and checked on load, because the standard is still moving. Tested against
+the TPC-DS reference model on ClickHouse 26.x.
 
 ## License
 
