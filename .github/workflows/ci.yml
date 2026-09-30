@@ -35,9 +35,9 @@ jobs:
           import duckdb; c = duckdb.connect(); c.execute('INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=1)')
           for t in ['store_sales', 'date_dim', 'customer', 'item', 'store']:
               c.execute(f\"COPY {t} TO 'tpcds/{t}.parquet' (FORMAT PARQUET)\")"
-          chmod -R a+rX tpcds
-          curl -sf http://127.0.0.1:8123 --data-binary "CREATE DATABASE tpcds"
+          chmod -R a+rX tpcds && ls -la tpcds
+          curl -sS --fail-with-body http://127.0.0.1:8123 --data-binary "CREATE DATABASE tpcds"
           for t in store_sales date_dim customer item store; do
-            curl -sf http://127.0.0.1:8123 --data-binary "CREATE TABLE tpcds.$t ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM file('tpcds/$t.parquet', Parquet)"
+            curl -sS --fail-with-body http://127.0.0.1:8123 --data-binary "CREATE TABLE tpcds.$t ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM file('tpcds/$t.parquet', Parquet)"
           done
       - run: uv run pytest -q
