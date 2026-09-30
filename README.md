@@ -59,6 +59,10 @@ r = ex.execute(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
 print(r.sql, r.columns, r.rows[:3])
 ```
 
+That is the Python API: `load_model`, `executor.connect`,
+`executor.Executor` and `planner.Query`; a `PlanError` names the nearest
+known object. The other modules are internal.
+
 ## How a question becomes SQL
 
 - Datasets come from `source`, joins from `relationships`. One root
@@ -112,7 +116,9 @@ name or an aggregate means `HAVING`), `-o "name [desc]"`, `-l limit`.
   row policies decide; the policy file hides more.
 - [MCP setup](docs/mcp-setup.md): Claude Desktop, Claude Code and other
   stdio MCP clients.
-- [Roadmap](ROADMAP.md) and [contributing](CONTRIBUTING.md).
+- [Design decisions](docs/design.md): what was measured or evaluated, and
+  the remote server design that waits for demand.
+- [Changelog](CHANGELOG.md) and [contributing](CONTRIBUTING.md).
 
 ## What it is not
 
@@ -120,11 +126,30 @@ No chat, no charts, no user interface: it provides access and
 understanding, the interface is someone else's job. No data loading: the
 data must already be in ClickHouse.
 
+## Limits
+
+- One root dataset per question, with direct relationships to every
+  dataset it touches. Chains through an intermediate dataset and
+  questions across two fact tables are not supported.
+- Joins are many-to-one only, inferred from primary and unique keys.
+- No time grain and no derived-dimension syntax: declare a field per
+  grain or band (see [model authoring](docs/model-authoring.md)). The
+  spec has no such attributes yet, and this project does not invent them.
+- A metric cannot reference another metric by name; repeat the expression.
+
 ## Status
 
 Pre-release. The supported Ossie schema version is pinned (`0.2.0.dev0`)
 and checked on load, because the standard is still moving. Tested against
-the TPC-DS reference model on ClickHouse 26.x.
+the TPC-DS reference model on ClickHouse 26.x. Until the major version is
+1, a minor release may change the Python API; the CLI and the MCP tools
+are the stable surface.
+
+Where it goes from here: PyPI once `apache-ossie` is published there; the
+upstream Ossie SQL dialect and compliance suite once they merge; multi-fact
+questions, fan-out protection for one-to-many joins, `source` as a query
+and a remote multi-user MCP server on the first real request. Each waits
+in the [issue tracker](https://github.com/Dactopus/ossie-clickhouse/issues).
 
 ## License
 

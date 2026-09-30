@@ -39,7 +39,7 @@ relationships:
 A question is answered from one root dataset (usually the fact table) with
 direct relationships to every other dataset it touches. Chains through an
 intermediate dataset and questions across two fact tables are not
-supported yet; see the roadmap.
+supported yet; see the README.
 
 ## Expressions
 

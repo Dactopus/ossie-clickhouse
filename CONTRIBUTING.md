@@ -25,8 +25,8 @@ uv run pytest -m "not integration"     # unit tests, no server needed
 
 Integration tests need a [ClickHouse](https://clickhouse.com/docs) server reachable over
 [HTTP](https://clickhouse.com/docs/interfaces/http) at `OSSIE_CLICKHOUSE_URL` (default
-`http://127.0.0.1:8123`) and skip without one. Any ClickHouse 24 or later
-works; access-control tests also need
+`http://127.0.0.1:8123`) and skip without one. CI runs ClickHouse 26.9;
+older releases are untested. Access-control tests also need
 [SQL access management](https://clickhouse.com/docs/operations/access-rights#enabling-access-control)
 enabled for the connecting user, and skip otherwise. Without a server at
 hand, the [official Docker image](https://clickhouse.com/docs/install/docker) gives one with
