@@ -15,7 +15,7 @@ dependencies = [
 ossie-clickhouse = "ossie_clickhouse.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "duckdb>=1.0", "clickhouse-connect>=0.8"]
 
 [build-system]
 requires = ["hatchling"]
@@ -36,3 +36,4 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["integration: needs a reachable ClickHouse (skipped otherwise)"]
