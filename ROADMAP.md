@@ -26,9 +26,9 @@ Initial steps:
   against the Phase 0 corpus: does it parse everything, and does its AST
   generate valid ClickHouse SQL? Decide whether to mirror its function table
   or wait for the merge. Do not depend on the unmerged branch.
-- Test infrastructure: DuckDB as a dev dependency for value comparison;
-  integration tests that need ClickHouse skip cleanly when no server is
-  reachable, so unit tests run anywhere.
+- Test infrastructure: DuckDB as a dev dependency for default expected
+  values; integration tests that need ClickHouse skip cleanly when no server
+  is reachable, so unit tests run anywhere.
 
 Then:
 
@@ -37,9 +37,12 @@ Then:
   a `TO_CHAR` format token table, and a NaN-versus-NULL policy.
 - `ANSI_SQL` is what models carry today; treat it as the primary input and
   `OSSIE_SQL_2026` as preferred when present.
-- Tests compare values against a reference engine (DuckDB), not only that
-  ClickHouse accepts the SQL. Cover every expression in the TPC-DS model and
-  every function in the spec catalog.
+- Tests compare values, not only that ClickHouse accepts the SQL. DuckDB
+  supplies expected values by default; where it lacks a function or
+  disagrees with the spec, the expectation is written by hand from the spec
+  text. Cover every expression in the TPC-DS model and every function in the
+  spec catalog. Adopt the Ossie compliance suite (apache/ossie PR #237) when
+  it lands.
 - Switch to the upstream SQLGlot Ossie dialect once apache/ossie PR #222
   lands.
 

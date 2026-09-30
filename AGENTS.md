@@ -81,9 +81,14 @@ Python library with a CLI entry point. Details in the README section
 
 ## Testing
 
-Translation tests compare values against a reference engine (DuckDB), not
-only that ClickHouse accepts the SQL: a translation that runs and returns the
-wrong value is the failure mode to guard against. Integration tests run
+Translation tests compare values, not only that ClickHouse accepts the SQL:
+a translation that runs and returns the wrong value is the failure mode to
+guard against. Expected values come from DuckDB by default, as a second
+opinion close to the spec's Postgres-like semantics, not as ground truth.
+Where DuckDB lacks a function or disagrees with the spec, the expected value
+is written by hand in the test with a reference to the spec section. The
+spec text wins over any engine. Replace hand-written expectations with the
+Ossie compliance suite (apache/ossie PR #237) once it exists. Integration tests run
 against the TPC-DS reference model from the Ossie repository, loaded into a
 local ClickHouse. See [spikes/phase0](spikes/phase0/README.md) for setup.
 
@@ -106,13 +111,17 @@ experiments, not part of the package), `docs/`.
 
 ```bash
 uv sync                       # install with dev tools
-uv run pytest                 # tests
+uv run pytest                 # tests; ClickHouse-dependent ones skip when no server
+uv run pytest -m "not integration"   # unit tests only
 uv run ruff check src tests   # lint
 uv run ruff format src tests  # format
 uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml
 ```
 
-Every change to library code comes with a test. Keep modules flat; add a
+Tests that use the `clickhouse` fixture are integration tests: they need a
+server at `OSSIE_CLICKHOUSE_URL` (default `http://127.0.0.1:8123`) and skip
+otherwise. DuckDB supplies default expected values for comparisons and needs
+no server. Every change to library code comes with a test. Keep modules flat; add a
 package level only when a module outgrows one file.
 
 ## Repository status
