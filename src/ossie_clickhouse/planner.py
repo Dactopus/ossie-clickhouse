@@ -21,6 +21,19 @@ class PlanError(ValueError):
 
 
 @dataclass(frozen=True)
+class TableInfo:
+    """What the executor learned about a dataset's physical source."""
+
+    engine: str
+    columns: frozenset[str]
+    dedup: bool = False  # ReplacingMergeTree and not overridden: read with FINAL
+    dictionary_key: str | None = None  # single-key dictionary: read with dictGetOrNull
+
+
+Catalog = dict[str, TableInfo]  # by dataset name
+
+
+@dataclass(frozen=True)
 class Query:
     metrics: tuple[str, ...] = ()
     dimensions: tuple[str, ...] = ()  # "dataset.field"
@@ -47,6 +60,7 @@ def _suggest(name: str, options) -> str:
 @dataclass
 class Planner:
     model: OssieDocument
+    catalog: Catalog | None = None  # from Executor.introspect(); None means plain tables
     _datasets: dict[str, OssieDataset] = field(init=False)
     _fields: dict[str, dict[str, OssieField]] = field(init=False)
     _metrics: dict[str, object] = field(init=False)
@@ -196,10 +210,19 @@ class Planner:
             where.append(tree)
 
         root = self._root(used)
-        sel = exp.select(*selects).from_(source_table(root.source).as_(root.name))
+        sel = exp.select(*selects).from_(self._table(root))
+        dict_keys: dict[str, exp.Expression] = {}  # dictionary dataset -> key expression
         for name in sorted(used - {root.name}):
             target = self.dataset(name)
             r = self._relationship(root, target)
+            info = (self.catalog or {}).get(target.name)
+            if (
+                info
+                and info.dictionary_key
+                and [c.upper() for c in r.to_columns] == [info.dictionary_key.upper()]
+            ):
+                dict_keys[target.name] = exp.column(r.from_columns[0], table=root.name)
+                continue
             on = exp.and_(
                 *(
                     exp.EQ(
@@ -209,18 +232,39 @@ class Planner:
                     for a, b in zip(r.from_columns, r.to_columns, strict=True)
                 )
             )
-            sel = sel.join(source_table(target.source).as_(target.name), on=on, join_type="left")
+            sel = sel.join(self._table(target), on=on, join_type="left")
         if where:
             sel = sel.where(exp.and_(*where))
         if group:
             sel = sel.group_by(*group)
         if q.limit is not None:
             sel = sel.limit(q.limit)
+        if dict_keys:
+            sel = sel.transform(lambda n: self._dict_get(n, dict_keys))
         # ClickHouse fills unmatched LEFT JOIN columns with defaults unless told otherwise.
         sel.set(
             "settings", [exp.EQ(this=exp.var("join_use_nulls"), expression=exp.Literal.number(1))]
         )
         return sel.transform(_rewrite)
+
+    def _table(self, ds: OssieDataset) -> exp.Expression:
+        table = source_table(ds.source).as_(ds.name)
+        info = (self.catalog or {}).get(ds.name)
+        return exp.Final(this=table) if info and info.dedup else table
+
+    def _dict_get(self, node: exp.Expression, dict_keys: dict[str, exp.Expression]):
+        """dataset.column on a dictionary dataset -> dictGetOrNull('db.dict', 'column', key)."""
+        if isinstance(node, exp.Column) and node.table in dict_keys:
+            ds = self.dataset(node.table)
+            return exp.Anonymous(
+                this="dictGetOrNull",
+                expressions=[
+                    exp.Literal.string(source_table(ds.source).sql()),
+                    exp.Literal.string(node.name),
+                    dict_keys[node.table].copy(),
+                ],
+            )
+        return node
 
     def sql(self, q: Query, pretty: bool = False) -> str:
         return self.plan(q).sql(dialect="clickhouse", pretty=pretty)

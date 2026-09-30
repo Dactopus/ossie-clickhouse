@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from decimal import Decimal
 
+from ossie_clickhouse.executor import Executor, connect
 from ossie_clickhouse.model import ModelError, load_model
 from ossie_clickhouse.planner import PlanError, Planner, Query
 
@@ -14,22 +17,45 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     v = sub.add_parser("validate", help="check an Ossie model file")
     v.add_argument("model", help="path to a YAML or JSON Ossie model")
-    s = sub.add_parser("sql", help="build the ClickHouse SQL for a semantic query")
-    s.add_argument("model", help="path to a YAML or JSON Ossie model")
-    s.add_argument("-m", "--metric", action="append", default=[], help="metric name")
-    s.add_argument("-d", "--dimension", action="append", default=[], help="dataset.field")
-    s.add_argument("-f", "--filter", action="append", default=[], help="Ossie expression")
-    s.add_argument("-l", "--limit", type=int)
+    v.add_argument("--url", help="also check the model against this ClickHouse")
+    for name, help_ in (("sql", "build the ClickHouse SQL for a semantic query"),
+                        ("query", "run a semantic query and print the rows")):  # fmt: skip
+        s = sub.add_parser(name, help=help_)
+        s.add_argument("model", help="path to a YAML or JSON Ossie model")
+        s.add_argument("-m", "--metric", action="append", default=[], help="metric name")
+        s.add_argument("-d", "--dimension", action="append", default=[], help="dataset.field")
+        s.add_argument("-f", "--filter", action="append", default=[], help="Ossie expression")
+        s.add_argument("-l", "--limit", type=int)
+        s.add_argument("--url", help="ClickHouse HTTP URL (default $OSSIE_CLICKHOUSE_URL)")
+    sub.choices["query"].add_argument(
+        "--json", action="store_true", help="JSON rows instead of TSV"
+    )
     args = parser.parse_args(argv)
 
-    if args.command == "sql":
+    if args.command in ("sql", "query"):
         try:
-            planner = Planner(load_model(args.model))
+            model = load_model(args.model)
             q = Query(tuple(args.metric), tuple(args.dimension), tuple(args.filter), args.limit)
-            print(planner.sql(q, pretty=True))
+            if args.command == "sql" and not args.url:
+                print(Planner(model).sql(q, pretty=True))
+                return 0
+            ex = Executor(connect(args.url), model)
+            if args.command == "sql":
+                print(ex.planner.sql(q, pretty=True))
+                return 0
+            r = ex.execute(q)
         except (ModelError, PlanError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 1
+        if args.json:
+            rows = [dict(zip(r.columns, row, strict=True)) for row in r.rows]
+            print(
+                json.dumps(rows, default=lambda v: float(v) if isinstance(v, Decimal) else str(v))
+            )
+        else:
+            print("\t".join(r.columns))
+            for row in r.rows:
+                print("\t".join("" if v is None else str(v) for v in row))
         return 0
 
     if args.command == "validate":
@@ -40,6 +66,15 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {p}", file=sys.stderr)
             print(f"{args.model}: {len(e.problems)} problem(s)", file=sys.stderr)
             return 1
+        if args.url:
+            problems = Executor(connect(args.url), doc).check()
+            for p in problems:
+                print(f"error: {p}", file=sys.stderr)
+            if problems:
+                print(
+                    f"{args.model}: {len(problems)} problem(s) against {args.url}", file=sys.stderr
+                )
+                return 1
         n_fields = sum(len(d.fields or []) for d in doc.datasets)
         print(
             f"{args.model}: ok ({doc.name}, version {doc.version}, "
