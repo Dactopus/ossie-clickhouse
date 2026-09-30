@@ -61,6 +61,8 @@ Subqueries and statements inside an expression are rejected.
 Window functions over aggregates (`RANK() OVER (...)`, `LAG(SUM(x))`)
 pass through in the same `SELECT`. The spec cannot say which grain a
 window metric needs, so the question has to supply the right dimensions.
+A window metric cannot be used in a filter (ClickHouse does not allow a
+window function in `HAVING`); the planner rejects it with a message.
 
 ## Time and derived dimensions
 

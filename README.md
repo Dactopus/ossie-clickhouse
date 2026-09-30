@@ -68,7 +68,9 @@ print(r.sql, r.columns, r.rows[:3])
   [`join_use_nulls = 1`](https://clickhouse.com/docs/operations/settings/settings#join_use_nulls)
   so unmatched rows get NULL, not ClickHouse defaults.
 - Filters over fields go to `WHERE`; filters that name a metric or contain
-  an aggregate (`total_sales > 1000000`) go to `HAVING`.
+  an aggregate (`total_sales > 1000000`) go to `HAVING`, and may only use
+  the question's own dimensions besides aggregates. A window metric
+  (`RANK() OVER ...`) cannot be filtered: select it and filter the rows.
 - Tables with a [`Replacing*`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
   engine are read with [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier);
   single-key [dictionaries](https://clickhouse.com/docs/sql-reference/dictionaries) are read with
