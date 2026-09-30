@@ -101,6 +101,9 @@ local ClickHouse. See [spikes/phase0](spikes/phase0/README.md) for setup.
 - `EXTRACT(DAYOFWEEK | DAYOFYEAR ...)` is not accepted; use `toDayOfWeek`
   and `toDayOfYear`.
 - Table names are `database.table`; Ossie `source` may have three parts.
+- `REGEXP_REPLACE` replaces all matches (spec reading); `DAYOFWEEK` is ISO.
+- Function rewrites live in `translate.py` and work on the SQLGlot AST,
+  never on SQL text.
 - `clickhouse-connect` does not decode the `Time` type.
 
 ## Development
@@ -126,4 +129,4 @@ package level only when a module outgrows one file.
 
 ## Repository status
 
-Phases 0 and 1 done (see [ROADMAP.md](ROADMAP.md)).
+Phases 0 to 2 done (see [ROADMAP.md](ROADMAP.md)).

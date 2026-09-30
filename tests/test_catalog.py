@@ -1,0 +1,134 @@
+"""Every function in the spec catalog (core-spec/expression_language.md),
+translated, executed in ClickHouse, and compared by value.
+
+Expected values come from DuckDB unless the entry pins one by hand. Pinned
+entries say why: DuckDB lacks the function, or disagrees with the spec, or
+the spec is silent and we chose. The spec text wins over any engine.
+"""
+
+import datetime as dt
+import decimal
+import math
+
+import pytest
+
+from ossie_clickhouse.translate import to_clickhouse
+
+DUCK = object()  # expected value: whatever DuckDB says
+D = dt.date
+DT = dt.datetime
+
+# Base row: x=2.5, s='abc-def', d=2024-03-15 (Friday), d2=2024-05-20, ts=2024-03-15 10:30:45
+CH_BASE = (
+    "(SELECT 2.5 AS x, 'abc-def' AS s, toDate('2024-03-15') AS d, toDate('2024-05-20') AS d2, "
+    "toDateTime('2024-03-15 10:30:45') AS ts)"
+)
+DUCK_BASE = (
+    "(SELECT 2.5 AS x, 'abc-def' AS s, DATE '2024-03-15' AS d, DATE '2024-05-20' AS d2, "
+    "TIMESTAMP '2024-03-15 10:30:45' AS ts)"
+)
+
+CATALOG = [
+    # --- aggregates (one row, so sample statistics are degenerate)
+    ("SUM(x)", DUCK), ("COUNT(x)", DUCK), ("COUNT(*)", DUCK), ("COUNT(DISTINCT x)", DUCK),
+    ("AVG(x)", DUCK), ("MIN(x)", DUCK), ("MAX(x)", DUCK),
+    # ClickHouse returns nan where SQL returns NULL for n < 2; NaN policy is the executor's (Phase 4).
+    ("STDDEV(x)", math.nan), ("STDDEV_SAMP(x)", math.nan), ("VARIANCE(x)", math.nan), ("VAR_SAMP(x)", math.nan),
+    ("STDDEV_POP(x)", DUCK), ("VAR_POP(x)", DUCK),
+    ("MEDIAN(x)", DUCK),
+    ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("APPROX_COUNT_DISTINCT(x)", DUCK),
+    ("APPROX_PERCENTILE(x, 0.5)", 2.5),  # DuckDB lacks it
+    ("SUM(DISTINCT x)", DUCK),
+    ("SUM(CASE WHEN x > 1 THEN x ELSE 0 END)", DUCK), ("COUNT(CASE WHEN x > 1 THEN 1 END)", DUCK),
+    # --- date/time extraction
+    ("YEAR(d)", DUCK), ("QUARTER(d)", DUCK), ("MONTH(d)", DUCK), ("DAY(d)", DUCK), ("DAYOFYEAR(d)", DUCK),
+    ("HOUR(ts)", DUCK), ("MINUTE(ts)", DUCK), ("SECOND(ts)", DUCK),
+    ("EXTRACT(YEAR FROM d)", DUCK), ("EXTRACT(MONTH FROM d)", DUCK), ("EXTRACT(DAY FROM d)", DUCK),
+    ("EXTRACT(WEEK FROM d)", DUCK), ("EXTRACT(DAYOFYEAR FROM d)", DUCK),
+    # Spec does not number weekdays. ISO (Monday=1) as ClickHouse does; DuckDB uses Sunday=0.
+    ("EXTRACT(DAYOFWEEK FROM d)", 5),
+    # Spec is silent; the millisecond component (0 here), not DuckDB's seconds*1000+ms.
+    ("EXTRACT(MILLISECOND FROM ts)", 0),
+    ("DATE_PART('year', d)", DUCK), ("DATE_PART('month', d)", DUCK), ("DATE_PART('day', d)", DUCK),
+    # --- truncation and arithmetic
+    ("DATE_TRUNC('year', d)", DUCK), ("DATE_TRUNC('quarter', d)", DUCK), ("DATE_TRUNC('month', d)", DUCK),
+    ("DATE_TRUNC('week', d)", DUCK), ("DATE_TRUNC('day', d)", DUCK), ("DATE_TRUNC('hour', ts)", DUCK),
+    ("DATE_TRUNC('minute', ts)", DUCK), ("DATE_TRUNC('second', ts)", DUCK),
+    ("DATEADD(day, 7, d)", D(2024, 3, 22)), ("DATEADD(month, -1, d)", D(2024, 2, 15)),  # DuckDB lacks DATEADD
+    ("DATEADD(year, 1, d)", D(2025, 3, 15)),
+    ("DATEDIFF(day, d, d2)", 66), ("DATEDIFF(month, d, d2)", 2), ("DATEDIFF(year, d, d2)", 0),
+    # --- construction
+    ("DATE '2024-01-15'", DUCK),
+    ("TIMESTAMP_NTZ '2024-01-15 10:30:00'", DT(2024, 1, 15, 10, 30)),  # DuckDB lacks the type name
+    ("CAST('2024-01-15' AS DATE)", DUCK),
+    ("CAST('2024-01-15 10:30:00' AS TIMESTAMP_NTZ)", DT(2024, 1, 15, 10, 30)),
+    ("TO_DATE('2024-01-15')", D(2024, 1, 15)), ("TO_TIMESTAMP('2024-01-15 10:30:00')", DT(2024, 1, 15, 10, 30)),
+    ("TO_DATE('15/01/2024', 'DD/MM/YYYY')", D(2024, 1, 15)),
+    ("TO_CHAR(d, 'YYYY-MM-DD')", "2024-03-15"), ("TO_CHAR(ts, 'DD MON YYYY HH12:MI PM')", "15 Mar 2024 10:30 AM"),
+    # --- strings
+    ("CONCAT(s, s)", DUCK), ("s || s", DUCK), ("LENGTH(s)", DUCK), ("LOWER(s)", DUCK), ("UPPER(s)", DUCK),
+    ("TRIM(s)", DUCK), ("LTRIM(s)", DUCK), ("RTRIM(s)", DUCK), ("LEFT(s, 2)", DUCK), ("RIGHT(s, 2)", DUCK),
+    ("SUBSTRING(s, 1, 2)", DUCK), ("REPLACE(s, 'a', 'b')", DUCK), ("SPLIT_PART(s, '-', 1)", DUCK),
+    ("SPLIT_PART(s, '-', 5)", ""),  # out of range: empty string, as in Snowflake/Postgres
+    ("POSITION('c' IN s)", DUCK), ("CHARINDEX('c', s)", 3), ("CONTAINS(s, 'c')", DUCK),
+    ("STARTSWITH(s, 'ab')", 1), ("ENDSWITH(s, 'ab')", 0),
+    ("s LIKE 'a%'", DUCK), ("s ILIKE 'A%'", DUCK), ("REGEXP_LIKE(s, 'a.*')", 1),
+    ("REGEXP_EXTRACT(s, 'b.')", DUCK), ("REGEXP_COUNT(s, '[a-c]')", 3),
+    # Spec: "replace matches", plural, so all occurrences (Snowflake, BigQuery); DuckDB replaces the first only.
+    ("REGEXP_REPLACE(s, '[ab]', 'x')", "xxc-def"),
+    # --- math
+    ("ABS(x)", DUCK), ("ROUND(x, 1)", DUCK), ("FLOOR(x)", DUCK), ("CEIL(x)", DUCK), ("CEILING(x)", DUCK),
+    ("TRUNC(x, 1)", DUCK), ("TRUNCATE(x, 1)", 2.5), ("MOD(x, 2)", DUCK), ("SIGN(x)", DUCK),
+    ("POWER(x, 2)", DUCK), ("SQRT(x)", DUCK), ("EXP(x)", DUCK), ("LN(x)", DUCK), ("LOG(10, x)", DUCK),
+    ("LOG(2, x)", DUCK), ("LOG10(x)", DUCK),
+    ("SIN(x)", DUCK), ("COS(x)", DUCK), ("TAN(x)", DUCK), ("ASIN(0.5)", DUCK), ("ACOS(0.5)", DUCK),
+    ("ATAN(x)", DUCK), ("ATAN2(x, x)", DUCK), ("RADIANS(x)", DUCK), ("DEGREES(x)", DUCK), ("PI()", DUCK),
+    ("GREATEST(x, 1, 2)", DUCK), ("LEAST(x, 1, 2)", DUCK),
+    # --- conditionals and operators
+    ("CASE WHEN x > 1 THEN 'a' ELSE 'b' END", DUCK), ("CASE x WHEN 1 THEN 'a' ELSE 'b' END", DUCK),
+    ("IF(x > 1, 1, 0)", DUCK), ("IFF(x > 1, 1, 0)", 1), ("NULLIF(x, 1)", DUCK), ("COALESCE(x, 1)", DUCK),
+    ("IFNULL(x, 1)", DUCK), ("NVL(x, 1)", 2.5), ("NVL2(x, 1, 0)", 1), ("ZEROIFNULL(x)", 2.5), ("NULLIFZERO(x)", 2.5),
+    ("x BETWEEN 1 AND 3", DUCK), ("x IN (1, 2, 3)", DUCK), ("x NOT IN (1, 2)", DUCK), ("x IS NULL", DUCK),
+    ("x IS NOT NULL", DUCK), ("NOT x > 1", DUCK), ("x > 1 AND x < 3 OR x = 5", DUCK), ("x % 2", DUCK),
+    ("x <> 1", DUCK), ("x != 1", DUCK), ("TRUE", DUCK), ("FALSE", DUCK),
+]  # fmt: skip
+
+
+def norm(v):
+    if isinstance(v, decimal.Decimal):
+        v = float(v)
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, float):
+        return "nan" if math.isnan(v) else round(v, 6)
+    if isinstance(v, DT):
+        v = v.replace(tzinfo=None)
+        return v.date() if v.time() == dt.time() else v  # midnight timestamp == date
+    if isinstance(v, dt.timedelta):
+        return v.days
+    return v
+
+
+@pytest.mark.parametrize(("expr", "expected"), CATALOG, ids=[c[0] for c in CATALOG])
+def test_catalog(expr, expected, clickhouse, duck):
+    got = norm(clickhouse.query(f"SELECT {to_clickhouse(expr)} FROM {CH_BASE}").result_rows[0][0])
+    if expected is DUCK:
+        expected = duck.execute(f"SELECT {expr} FROM {DUCK_BASE}").fetchone()[0]
+    assert got == norm(expected)
+
+
+@pytest.mark.parametrize(
+    "expr", ["CURRENT_DATE", "CURRENT_DATE()", "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP()"]
+)
+def test_current(expr, clickhouse):
+    got = clickhouse.query(f"SELECT {to_clickhouse(expr)}").result_rows[0][0]
+    assert isinstance(got, dt.date)
+
+
+@pytest.mark.parametrize("expr", ["CURRENT_TIME", "TIME '10:30:00'", "CAST('10:30:00' AS TIME)"])
+def test_time_type_executes(expr, clickhouse):
+    """clickhouse-connect does not decode Time, so compare as string."""
+    got = clickhouse.query(f"SELECT toString({to_clickhouse(expr)})").result_rows[0][0]
+    assert got.count(":") == 2

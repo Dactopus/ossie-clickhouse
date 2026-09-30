@@ -18,33 +18,29 @@ in a translatable dialect. CLI: `ossie-clickhouse validate <model>`.
 Key and relationship columns are physical column names per the spec, so
 their existence is checked against the database in Phase 4, not here.
 
-## Phase 2: Expression translation
+## Phase 2: Expression translation (done)
 
-Initial steps:
+Completed 2026-09-30. `translate.py` parses with SQLGlot's default dialect
+plus the spec's argument order for `DATEADD`, `DATEDIFF` and `DATE_PART`,
+rewrites the spec functions ClickHouse lacks on the AST, and generates with
+SQLGlot's ClickHouse dialect. `OSSIE_SQL_2026` is preferred, `ANSI_SQL` is
+the fallback and what models carry today.
 
-- Evaluate the upstream SQLGlot Ossie dialect (apache/ossie PR #222)
-  against the Phase 0 corpus: does it parse everything, and does its AST
-  generate valid ClickHouse SQL? Decide whether to mirror its function table
-  or wait for the merge. Do not depend on the unmerged branch.
-- Test infrastructure: DuckDB as a dev dependency for default expected
-  values; integration tests that need ClickHouse skip cleanly when no server
-  is reachable, so unit tests run anywhere.
+Tests: every spec catalog function executed in ClickHouse and compared by
+value with DuckDB, or with a hand-pinned expectation where DuckDB lacks the
+function or disagrees with the spec; every TPC-DS field and metric executed
+against loaded data. Decisions recorded in the tests: `REGEXP_REPLACE`
+replaces all matches, `DAYOFWEEK` is ISO (Monday = 1), `MILLISECOND` is the
+component. PR #222 evaluation in
+[docs/phase-2-pr222-evaluation.md](docs/phase-2-pr222-evaluation.md).
 
-Then:
+Left open, on purpose:
 
-- Translate field and metric expressions to ClickHouse SQL.
-- Function mapping table for the gaps found in Phase 0 (about 25 entries),
-  a `TO_CHAR` format token table, and a NaN-versus-NULL policy.
-- `ANSI_SQL` is what models carry today; treat it as the primary input and
-  `OSSIE_SQL_2026` as preferred when present.
-- Tests compare values, not only that ClickHouse accepts the SQL. DuckDB
-  supplies expected values by default; where it lacks a function or
-  disagrees with the spec, the expectation is written by hand from the spec
-  text. Cover every expression in the TPC-DS model and every function in the
-  spec catalog. Adopt the Ossie compliance suite (apache/ossie PR #237) when
-  it lands.
-- Switch to the upstream SQLGlot Ossie dialect once apache/ossie PR #222
-  lands.
+- NaN versus NULL (`STDDEV` over one row, float division by zero) is an
+  executor concern: convert in the result set in Phase 4, not in SQL.
+- Switch parsing to the upstream dialect once apache/ossie PR #222 merges.
+- No validation of disallowed constructs (subqueries, `SELECT`) yet; add
+  when the planner needs to trust expressions, or take it from PR #222.
 
 ## Phase 3: Query planner, minimum
 
@@ -54,7 +50,7 @@ Then:
 - One deterministic `SELECT` per question. Snapshot tests on generated SQL.
 - CLI: `ossie-clickhouse sql <model> --metric ... --dimension ...`.
 
-Explicitly deferred to Phase 7: multi-fact queries, fan-out protection,
+Explicitly deferred to Phase 8: multi-fact queries, fan-out protection,
 metrics over metrics.
 
 ## Phase 4: Executor
