@@ -26,7 +26,7 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
