@@ -105,8 +105,13 @@ def test_deterministic():
         (Query(dimensions=("i_brand",)), "must be dataset.field"),
         (Query(), "at least one metric or dimension"),
         (
-            Query(metrics=("total_sales",), filters=("SUM(store_sales.ss_quantity) > 1",)),
-            "aggregates",
+            Query(metrics=("total_sales",), filters=("total_sale > 1",)),
+            "unqualified column 'total_sale' in 'total_sale > 1'; use dataset.field or a "
+            "metric name (did you mean: total_sales",
+        ),
+        (
+            Query(metrics=("total_sales",), filters=("ss_quantity > 1",)),
+            "use dataset.field or a metric name",
         ),
         (
             Query(metrics=("total_sales",), filters=("store_sales.ss_quantity IN (SELECT 1)",)),
@@ -118,6 +123,29 @@ def test_deterministic():
 def test_errors(query, message):
     with pytest.raises(PlanError, match=message.replace("(", r"\(").replace("?", r"\?")):
         P.sql(query)
+
+
+def test_aggregate_filters_go_to_having():
+    sql = P.sql(
+        Query(
+            metrics=("total_sales",),
+            dimensions=("item.i_brand",),
+            filters=(
+                "date_dim.d_year = 1998",
+                "total_sales > 1000000",  # metric by name
+                "COUNT(*) > 10",  # raw aggregate
+            ),
+        )
+    )
+    assert sql.endswith(
+        "WHERE date_dim.d_year = 1998 GROUP BY item.i_brand "
+        "HAVING SUM(store_sales.ss_ext_sales_price) > 1000000 AND COUNT(*) > 10 "
+        "SETTINGS join_use_nulls = 1"
+    )
+    # No dimensions: HAVING without GROUP BY is still one SELECT.
+    assert P.sql(Query(metrics=("total_sales",), filters=("total_sales > 1",))).endswith(
+        "HAVING SUM(store_sales.ss_ext_sales_price) > 1 SETTINGS join_use_nulls = 1"
+    )
 
 
 def test_join_requires_unique_key_on_target():
@@ -170,6 +198,25 @@ def test_filter_and_values(tpcds):
         P.sql(Query(metrics=("total_sales",), filters=("date_dim.d_year = 1998",)))
     ).result_rows[0][0]
     assert planned == direct
+
+
+def test_having_values(tpcds):
+    direct = tpcds.query(
+        "SELECT i.i_brand, SUM(ss.ss_ext_sales_price) AS s FROM tpcds.store_sales ss "
+        "LEFT JOIN tpcds.item i ON ss.ss_item_sk = i.i_item_sk GROUP BY i.i_brand "
+        "HAVING s > 100000 ORDER BY i.i_brand NULLS FIRST SETTINGS join_use_nulls = 1"
+    ).result_rows
+    planned = tpcds.query(
+        P.sql(
+            Query(
+                metrics=("total_sales",),
+                dimensions=("item.i_brand",),
+                filters=("total_sales > 100000",),
+                order_by=("item.i_brand",),
+            )
+        )
+    ).result_rows
+    assert planned and planned == direct
 
 
 @pytest.mark.parametrize("metric", MODEL.metrics, ids=[m.name for m in MODEL.metrics])

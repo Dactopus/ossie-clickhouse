@@ -96,9 +96,11 @@ class Planner:
             raise PlanError(f"unknown field {ref!r}{_suggest(ref, names)}")
         return ds, f
 
-    def resolve(self, expression: str, used: set[str]) -> exp.Expression:
+    def resolve(self, expression: str, used: set[str], metrics: bool = False) -> exp.Expression:
         """Parse an expression, inline `dataset.field` references, qualify columns.
 
+        With ``metrics``, a bare name that is a metric inlines that metric's
+        expression (filters may say ``total_sales > 1000``).
         Records the datasets touched in ``used`` (by model name).
         """
         try:
@@ -110,7 +112,14 @@ class Planner:
             if not isinstance(node, exp.Column):
                 return node
             if not node.table:
-                raise PlanError(f"unqualified column {node.name!r} in {expression!r}")
+                m = self._metrics.get(node.name.upper()) if metrics else None
+                if m is not None:
+                    return self.resolve(pick_expression(m.expression), used)
+                hint = ""
+                if metrics:
+                    names = (x.name for x in self.model.metrics or [])
+                    hint = f"; use dataset.field or a metric name{_suggest(node.name, names)}"
+                raise PlanError(f"unqualified column {node.name!r} in {expression!r}{hint}")
             ds, f = self.field_ref(f"{node.table}.{node.name}")
             used.add(ds.name)
             return self._field_expr(ds, f)
@@ -203,12 +212,11 @@ class Planner:
                 raise PlanError(f"unknown metric {name!r}{_suggest(name, names)}")
             selects.append(self.resolve(pick_expression(m.expression), used).as_(m.name))
 
-        where = []
+        where: list[exp.Expression] = []
+        having: list[exp.Expression] = []  # filters over aggregates or metric names
         for f in q.filters:
-            tree = self.resolve(f, used)
-            if list(tree.find_all(exp.AggFunc)):
-                raise PlanError(f"filters on aggregates are not supported: {f!r}")
-            where.append(tree)
+            tree = self.resolve(f, used, metrics=True)
+            (having if tree.find(exp.AggFunc) else where).append(tree)
 
         root = self._root(used)
         sel = exp.select(*selects).from_(self._table(root))
@@ -238,6 +246,8 @@ class Planner:
             sel = sel.where(exp.and_(*where))
         if group:
             sel = sel.group_by(*group)
+        if having:
+            sel = sel.having(exp.and_(*having))
         if q.order_by:
             sel = sel.order_by(*self._order(q, selects))
         if q.limit is not None:

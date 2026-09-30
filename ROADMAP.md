@@ -130,8 +130,9 @@ TPC-DS; a raw stdio handshake was checked by hand.
 
 ## Phase 7: First public release
 
-- Filters on aggregates (`HAVING`): an agent asks "brands with sales over
-  X" on day one, the spec allows it, and it is a small planner change.
+- Filters on aggregates (done): a filter that names a metric
+  (`total_sales > 1000000`) or contains an aggregate goes to `HAVING`,
+  the rest to `WHERE`. Same `filters` list, no new parameter.
 - Packaging and publication to PyPI.
 - Documentation: installation, model authoring for ClickHouse, CLI, MCP
   setup with desktop agents, access control through ClickHouse.

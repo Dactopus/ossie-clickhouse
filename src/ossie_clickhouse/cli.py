@@ -25,7 +25,13 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("model", help="path to a YAML or JSON Ossie model")
         s.add_argument("-m", "--metric", action="append", default=[], help="metric name")
         s.add_argument("-d", "--dimension", action="append", default=[], help="dataset.field")
-        s.add_argument("-f", "--filter", action="append", default=[], help="Ossie expression")
+        s.add_argument(
+            "-f",
+            "--filter",
+            action="append",
+            default=[],
+            help="condition over dataset.field or a metric name",
+        )
         s.add_argument("-o", "--order", action="append", default=[], help="name or 'name desc'")
         s.add_argument("-l", "--limit", type=int)
         s.add_argument("--url", help="ClickHouse HTTP URL (default $OSSIE_CLICKHOUSE_URL)")
