@@ -32,10 +32,22 @@ docker run -d --name ch -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 c
 uv run pytest
 ```
 
-Tests against the TPC-DS reference model additionally need the `tpcds`
-database loaded; [spikes/phase0/README.md](spikes/phase0/README.md) has
-the recipe. They skip when it is absent. CI runs the whole suite except
-the TPC-DS ones.
+Tests against the TPC-DS reference model need the `tpcds` database with
+the five tables the model uses, and skip when it is absent (CI runs
+without it). DuckDB, already a dev dependency, generates the data at
+scale factor 1:
+
+```bash
+mkdir -p /tmp/tpcds && uv run python -c "
+import duckdb; c = duckdb.connect(); c.execute('INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=1)')
+for t in ['store_sales', 'date_dim', 'customer', 'item', 'store']:
+    c.execute(f\"COPY {t} TO '/tmp/tpcds/{t}.parquet' (FORMAT PARQUET)\")"
+docker cp /tmp/tpcds/. ch:/var/lib/clickhouse/user_files/
+docker exec ch clickhouse-client -q "CREATE DATABASE IF NOT EXISTS tpcds"
+for t in store_sales date_dim customer item store; do
+  docker exec ch clickhouse-client -q "CREATE TABLE tpcds.$t ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM file('$t.parquet', Parquet)"
+done
+```
 
 ```bash
 uv run ruff check src tests
@@ -74,7 +86,6 @@ pull request:
 | `src/ossie_clickhouse/mcp_server.py` | MCP tools, behind the `[mcp]` extra. |
 | `src/ossie_clickhouse/cli.py` | `ossie-clickhouse` command. |
 | `tests/` | pytest; fixtures in `tests/fixtures/`. |
-| `spikes/` | Throwaway experiments, not part of the package. |
 
 ## Pull requests
 

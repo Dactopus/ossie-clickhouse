@@ -105,7 +105,7 @@ is written by hand in the test with a reference to the spec section. The
 spec text wins over any engine. Replace hand-written expectations with the
 Ossie compliance suite (apache/ossie PR #237) once it exists. Integration tests run
 against the TPC-DS reference model from the Ossie repository, loaded into a
-local ClickHouse. See [spikes/phase0](spikes/phase0/README.md) for setup.
+local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 
 ## Known ClickHouse traits to handle
 
@@ -124,8 +124,7 @@ local ClickHouse. See [spikes/phase0](spikes/phase0/README.md) for setup.
 ## Development
 
 Python 3.11+, managed with uv. Layout: `src/ossie_clickhouse/` (library and
-CLI), `tests/` (pytest, fixtures in `tests/fixtures/`), `spikes/` (throwaway
-experiments, not part of the package), `docs/`.
+CLI), `tests/` (pytest, fixtures in `tests/fixtures/`), `docs/`.
 
 ```bash
 uv sync                       # install with dev tools
