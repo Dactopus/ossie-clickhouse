@@ -38,6 +38,7 @@ class Query:
     metrics: tuple[str, ...] = ()
     dimensions: tuple[str, ...] = ()  # "dataset.field"
     filters: tuple[str, ...] = ()  # Ossie expressions over dataset.field
+    order_by: tuple[str, ...] = ()  # metric or dimension names, "name desc" for descending
     limit: int | None = None
 
 
@@ -237,6 +238,8 @@ class Planner:
             sel = sel.where(exp.and_(*where))
         if group:
             sel = sel.group_by(*group)
+        if q.order_by:
+            sel = sel.order_by(*self._order(q, selects))
         if q.limit is not None:
             sel = sel.limit(q.limit)
         if dict_keys:
@@ -246,6 +249,26 @@ class Planner:
             "settings", [exp.EQ(this=exp.var("join_use_nulls"), expression=exp.Literal.number(1))]
         )
         return sel.transform(_rewrite)
+
+    def _order(self, q: Query, selects: list[exp.Expression]) -> list[exp.Expression]:
+        """ORDER BY over selected aliases; names are metrics, dataset.field, or field names."""
+        aliases = {e.alias.upper(): e.alias for e in selects}
+        for ref in q.dimensions:  # allow the dataset.field spelling too
+            aliases[ref.upper()] = ref.split(".")[1]
+        out = []
+        for item in q.order_by:
+            name, _, direction = item.partition(" ")
+            desc = direction.strip().upper() == "DESC"
+            if direction and not desc and direction.strip().upper() != "ASC":
+                raise PlanError(f"order_by item {item!r}: use 'name', 'name asc' or 'name desc'")
+            alias = aliases.get(name.upper())
+            if alias is None:
+                raise PlanError(
+                    f"order_by {name!r} is not a selected metric or dimension"
+                    f"{_suggest(name, aliases.values())}"
+                )
+            out.append(exp.Ordered(this=exp.column(alias), desc=desc, nulls_first=not desc))
+        return out
 
     def _table(self, ds: OssieDataset) -> exp.Expression:
         table = source_table(ds.source).as_(ds.name)

@@ -1,0 +1,188 @@
+"""MCP server: a thin adapter over the library for AI agents.
+
+Four tools, no logic of their own: everything they do is a library call.
+Errors come back as results with an ``error`` field so the planner's
+"did you mean" hints reach the agent verbatim.
+
+Runs over stdio with ClickHouse credentials from the environment, so one
+process serves one ClickHouse user and access control (Phase 5) applies
+unchanged. ``client_factory`` is the seam for a remote server that maps a
+caller's identity to a ClickHouse connection.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
+from ossie import OssieDocument
+
+from ossie_clickhouse.access import Policy
+from ossie_clickhouse.executor import Executor, connect
+from ossie_clickhouse.planner import PlanError, Query
+
+# --- pure views of a model, testable without a server ------------------------
+
+
+def _ai(obj) -> dict[str, Any]:
+    ctx = obj.ai_context
+    if ctx is None:
+        return {}
+    if isinstance(ctx, str):
+        return {"instructions": ctx}
+    return {k: v for k, v in ctx.model_dump().items() if v}
+
+
+def _brief(obj, **extra) -> dict[str, Any]:
+    d = {"name": obj.name}
+    if getattr(obj, "description", None):
+        d["description"] = obj.description
+    if synonyms := _ai(obj).get("synonyms"):
+        d["synonyms"] = list(synonyms)
+    return d | extra
+
+
+def summary(model: OssieDocument) -> dict[str, Any]:
+    """The whole model in one screen: names, descriptions, synonyms, no fields."""
+    return {
+        "name": model.name,
+        "description": model.description,
+        **_ai(model),
+        "datasets": [_brief(d, fields=len(d.fields or [])) for d in model.datasets],
+        "metrics": [_brief(m) for m in model.metrics or []],
+        "relationships": [f"{r.from_dataset} -> {r.to}" for r in model.relationships or []],
+        "usage": (
+            "Call describe(name) for a dataset's fields or a metric's definition, "
+            "search(text) to find objects by name or synonym, then query(...)."
+        ),
+    }
+
+
+def _objects(model: OssieDocument):
+    for d in model.datasets:
+        yield "dataset", d.name, d
+        for f in d.fields or []:
+            yield "field", f"{d.name}.{f.name}", f
+    for m in model.metrics or []:
+        yield "metric", m.name, m
+
+
+def search(model: OssieDocument, text: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Objects whose name, description or synonyms contain every word of ``text``."""
+    words = text.lower().split()
+    hits = []
+    for kind, name, obj in _objects(model):
+        hay = " ".join([name, obj.description or "", *_ai(obj).get("synonyms", [])]).lower()
+        if words and all(w in hay for w in words):
+            hits.append({"kind": kind} | _brief(obj) | {"name": name})
+    return hits[:limit]
+
+
+def _edge(r) -> str:
+    return f"{r.from_dataset}({', '.join(r.from_columns)}) -> {r.to}({', '.join(r.to_columns)})"
+
+
+def describe(model: OssieDocument, name: str) -> dict[str, Any]:
+    """Everything about one dataset, field (``dataset.field``) or metric."""
+    for kind, obj_name, obj in _objects(model):
+        if obj_name.upper() != name.upper():
+            continue
+        out: dict[str, Any] = {"kind": kind} | _brief(obj) | {"name": obj_name}
+        ai = _ai(obj)
+        if ai.get("instructions"):
+            out["instructions"] = ai["instructions"]
+        if ai.get("examples"):
+            out["examples"] = list(ai["examples"])
+        if kind == "dataset":
+            out["fields"] = [
+                _brief(f, datatype=f.datatype.value if f.datatype else None)
+                | ({"is_time": True} if f.is_time_dimension() else {})
+                for f in obj.fields or []
+            ]
+            out["relationships"] = [
+                _edge(r) for r in model.relationships or [] if obj_name in (r.from_dataset, r.to)
+            ]
+        else:
+            out["expression"] = obj.expression.dialects[0].expression
+            if obj.datatype:
+                out["datatype"] = obj.datatype.value
+            if kind == "field" and obj.is_time_dimension():
+                out["is_time"] = True
+        return out
+    close = [n for _, n, _ in _objects(model) if name.lower() in n.lower()][:5]
+    return {"error": f"unknown object {name!r}" + (f"; similar: {close}" if close else "")}
+
+
+# --- the server ----------------------------------------------------------------
+
+
+def build_server(
+    model: OssieDocument,
+    client_factory: Callable[[], Any] = connect,
+    policy: Policy | None = None,
+):
+    try:
+        from mcp.server import MCPServer
+    except ImportError as e:  # pragma: no cover
+        raise ImportError("MCP support needs the extra: pip install 'ossie-clickhouse[mcp]'") from e
+
+    executor = Executor(client_factory(), model, policy)
+    m = executor.model  # trimmed to what the connected user may see
+    server = MCPServer(
+        "ossie-clickhouse",
+        instructions=(
+            f"Semantic model '{m.name}' over ClickHouse. Ask in business terms: pick metrics "
+            "and dimensions by name, never write SQL. Start with list_model. Never add up or "
+            "rank rows yourself: for a total, run query without dimensions; for a comparison, "
+            "query the exact dimensions you need. If the model has no metric or field for what "
+            "is asked, say so; do not approximate it with filters on other fields."
+        ),
+    )
+
+    @server.tool()
+    def list_model() -> dict[str, Any]:
+        """The semantic model: datasets, metrics, relationships, with descriptions and synonyms."""
+        return summary(m)
+
+    @server.tool()
+    def search_model(text: str) -> list[dict[str, Any]]:
+        """Find datasets, fields and metrics whose name, description or synonyms contain
+        every word of the text. Try single words too: "returns", then "discount"."""
+        return search(m, text)
+
+    @server.tool()
+    def describe_object(name: str) -> dict[str, Any]:
+        """Full detail for one dataset, field (dataset.field) or metric, including AI hints."""
+        return describe(m, name)
+
+    @server.tool()
+    def query(
+        metrics: list[str] = [],  # noqa: B006
+        dimensions: list[str] = [],  # noqa: B006
+        filters: list[str] = [],  # noqa: B006
+        order_by: list[str] = [],  # noqa: B006
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Run a semantic query. metrics and dimensions are names from the model
+        (dimensions as dataset.field); filters are SQL-like conditions over
+        dataset.field, e.g. "date_dim.d_year = 1998"; order_by lists metric or
+        dimension names, "name desc" for descending, default: first metric
+        descending. Returns rows and the SQL."""
+        if not order_by and metrics:
+            order_by = [f"{metrics[0]} desc"]
+        try:
+            r = executor.execute(
+                Query(tuple(metrics), tuple(dimensions), tuple(filters), tuple(order_by), limit)
+            )
+        except PlanError as e:
+            return {"error": str(e)}
+        except Exception as e:  # ClickHouse errors are useful to the agent too
+            return {"error": f"ClickHouse: {str(e).splitlines()[0][:400]}"}
+        return {
+            "columns": r.columns,
+            "rows": [list(row) for row in r.rows],
+            "row_count": len(r.rows),
+            "sql": r.sql,
+        }
+
+    return server

@@ -67,6 +67,27 @@ def test_window_metric_passes_through():
     assert "SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date" in sql
 
 
+def test_order_by():
+    q = Query(
+        metrics=("total_sales",), dimensions=("item.i_brand",), order_by=("total_sales desc",)
+    )
+    assert P.sql(q).endswith(
+        "GROUP BY item.i_brand ORDER BY total_sales DESC SETTINGS join_use_nulls = 1"
+    )
+    q = Query(
+        metrics=("total_sales",),
+        dimensions=("item.i_brand",),
+        order_by=("item.i_brand", "TOTAL_SALES"),
+    )
+    assert "ORDER BY i_brand ASC NULLS FIRST, total_sales ASC NULLS FIRST" in P.sql(q)
+    with pytest.raises(
+        PlanError, match="not a selected metric or dimension \\(did you mean: total_sales"
+    ):
+        P.sql(Query(metrics=("total_sales",), order_by=("total_sale",)))
+    with pytest.raises(PlanError, match="use 'name'"):
+        P.sql(Query(metrics=("total_sales",), order_by=("total_sales down",)))
+
+
 def test_deterministic():
     q = Query(metrics=("store_productivity",), dimensions=("store.s_state", "item.i_category"))
     assert P.sql(q) == P.sql(q)

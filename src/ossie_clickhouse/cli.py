@@ -26,18 +26,41 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("-m", "--metric", action="append", default=[], help="metric name")
         s.add_argument("-d", "--dimension", action="append", default=[], help="dataset.field")
         s.add_argument("-f", "--filter", action="append", default=[], help="Ossie expression")
+        s.add_argument("-o", "--order", action="append", default=[], help="name or 'name desc'")
         s.add_argument("-l", "--limit", type=int)
         s.add_argument("--url", help="ClickHouse HTTP URL (default $OSSIE_CLICKHOUSE_URL)")
         s.add_argument("--policy", help="YAML file hiding objects per ClickHouse user or role")
     sub.choices["query"].add_argument(
         "--json", action="store_true", help="JSON rows instead of TSV"
     )
+    sv = sub.add_parser("serve", help="run the MCP server over stdio (needs the [mcp] extra)")
+    sv.add_argument("model", help="path to a YAML or JSON Ossie model")
+    sv.add_argument("--url", help="ClickHouse HTTP URL (default $OSSIE_CLICKHOUSE_URL)")
+    sv.add_argument("--policy", help="YAML file hiding objects per ClickHouse user or role")
     args = parser.parse_args(argv)
+
+    if args.command == "serve":
+        from ossie_clickhouse.mcp_server import build_server
+
+        try:
+            policy = Policy.load(args.policy) if args.policy else None
+            server = build_server(load_model(args.model), lambda: connect(args.url), policy)
+        except ModelError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        server.run()  # stdio
+        return 0
 
     if args.command in ("sql", "query"):
         try:
             model = load_model(args.model)
-            q = Query(tuple(args.metric), tuple(args.dimension), tuple(args.filter), args.limit)
+            q = Query(
+                tuple(args.metric),
+                tuple(args.dimension),
+                tuple(args.filter),
+                tuple(args.order),
+                args.limit,
+            )
             if args.command == "sql" and not args.url:
                 print(Planner(model).sql(q, pretty=True))
                 return 0
