@@ -87,9 +87,20 @@ def test_unreadable(tmp_path):
     assert "cannot read" in e.value.problems[0]
 
 
+def test_top_level_must_be_a_mapping(tmp_path):
+    p = tmp_path / "list.yaml"
+    p.write_text("- datasets\n")
+    with pytest.raises(ModelError) as e:
+        load_model(p)
+    assert "top level must be a mapping" in e.value.problems[0]
+
+
 def test_cli(tmp_path, tpcds, capsys):
     assert main(["validate", str(FIXTURE)]) == 0
     assert "ok (tpcds_retail_model" in capsys.readouterr().out
     tpcds["version"] = "0.0.0"
-    assert main(["validate", str(write(tmp_path, tpcds))]) == 1
+    bad = write(tmp_path, tpcds)
+    assert main(["validate", str(bad)]) == 1
     assert "1 problem(s)" in capsys.readouterr().err
+    assert main(["serve", str(bad)]) == 1  # fails before touching ClickHouse
+    assert "unsupported version" in capsys.readouterr().err

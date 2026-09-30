@@ -1,6 +1,7 @@
 """Executor against a ClickHouse test database with a ReplacingMergeTree fact
 table and a dictionary dimension, created here."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ import pytest
 from ossie_clickhouse import load_model
 from ossie_clickhouse.cli import main
 from ossie_clickhouse.executor import Executor, overrides
-from ossie_clickhouse.planner import Query
+from ossie_clickhouse.planner import PlanError, Query
 
 FIXTURE = Path(__file__).parent / "fixtures" / "history.yaml"
 SETUP = """
@@ -85,12 +86,24 @@ def test_check_reports_database_level_problems(ex, tmp_path):
     assert ex.check() == []
     text = FIXTURE.read_text().replace("expression: amount}", "expression: amnt}", 1)
     text = text.replace("source: ossie_test.country", "source: ossie_test.countries")
+    text = text.replace("from_columns: [country_code]", "from_columns: [country_cod]")
     p = tmp_path / "bad.yaml"
     p.write_text(text)
     problems = Executor(ex.client, load_model(p)).check()
     assert any("column 'amnt' (field 'amount') not in ossie_test.orders" in x for x in problems)
     assert any("source 'ossie_test.countries' not found" in x for x in problems)
+    assert any(
+        "relationship 'orders_to_country': column 'country_cod' not in dataset 'orders'" in x
+        for x in problems
+    )
     assert main(["validate", str(p), "--url", ex.client.url]) == 1
+
+
+def test_query_sources_are_not_introspected(ex, tmp_path):
+    p = tmp_path / "query.yaml"
+    p.write_text(re.sub(r"source: ossie_test\.\w+", "source: SELECT 1", FIXTURE.read_text()))
+    with pytest.raises(PlanError, match="none of the model's datasets is readable"):
+        Executor(ex.client, load_model(p))
 
 
 def test_cli_query(ex, capsys):

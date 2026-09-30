@@ -18,30 +18,44 @@ DUCK = object()  # expected value: whatever DuckDB says
 D = dt.date
 DT = dt.datetime
 
-# Base row: x=2.5, s='abc-def', d=2024-03-15 (Friday), d2=2024-05-20, ts=2024-03-15 10:30:45
+# Base row: x=2.5, n=NULL, s='abc-def', d=2024-03-15 (Friday), d2=2024-05-20, ts=2024-03-15 10:30:45
 CH_BASE = (
-    "(SELECT 2.5 AS x, 'abc-def' AS s, toDate('2024-03-15') AS d, toDate('2024-05-20') AS d2, "
+    "(SELECT 2.5 AS x, CAST(NULL AS Nullable(Float64)) AS n, 'abc-def' AS s, "
+    "toDate('2024-03-15') AS d, toDate('2024-05-20') AS d2, "
     "toDateTime('2024-03-15 10:30:45') AS ts)"
 )
 DUCK_BASE = (
-    "(SELECT 2.5 AS x, 'abc-def' AS s, DATE '2024-03-15' AS d, DATE '2024-05-20' AS d2, "
-    "TIMESTAMP '2024-03-15 10:30:45' AS ts)"
+    "(SELECT 2.5 AS x, CAST(NULL AS DOUBLE) AS n, 'abc-def' AS s, "
+    "DATE '2024-03-15' AS d, DATE '2024-05-20' AS d2, TIMESTAMP '2024-03-15 10:30:45' AS ts)"
 )
+# Aggregate base: x in (1, 2.5, 4, 10, NULL). Five rows, so a quantile has something to
+# choose between and NULL handling shows.
+CH_AGG = "(SELECT arrayJoin([1, 2.5, 4, 10, NULL]) AS x)"
+DUCK_AGG = "(SELECT UNNEST(CAST([1, 2.5, 4, 10, NULL] AS DOUBLE[])) AS x)"
 
-CATALOG = [
-    # --- aggregates (one row, so sample statistics are degenerate)
+AGGREGATES = [
     ("SUM(x)", DUCK), ("COUNT(x)", DUCK), ("COUNT(*)", DUCK), ("COUNT(DISTINCT x)", DUCK),
     ("AVG(x)", DUCK), ("MIN(x)", DUCK), ("MAX(x)", DUCK),
-    # ClickHouse returns nan where SQL returns NULL for n < 2; NaN policy is the executor's (Phase 4).
-    ("STDDEV(x)", math.nan), ("STDDEV_SAMP(x)", math.nan), ("VARIANCE(x)", math.nan), ("VAR_SAMP(x)", math.nan),
+    ("STDDEV(x)", DUCK), ("STDDEV_SAMP(x)", DUCK), ("VARIANCE(x)", DUCK), ("VAR_SAMP(x)", DUCK),
     ("STDDEV_POP(x)", DUCK), ("VAR_POP(x)", DUCK),
     ("MEDIAN(x)", DUCK),
     ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY x DESC)", DUCK),
+    # Discrete: the first value whose cumulative share reaches p (Postgres semantics).
     ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_DISC(0) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_DISC(1) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x DESC)", DUCK),
+    ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x DESC)", DUCK),
     ("APPROX_COUNT_DISTINCT(x)", DUCK),
-    ("APPROX_PERCENTILE(x, 0.5)", 2.5),  # DuckDB lacks it
+    ("APPROX_PERCENTILE(x, 0.5)", 2.5),  # DuckDB lacks it; quantileTDigest is approximate by design
     ("SUM(DISTINCT x)", DUCK),
     ("SUM(CASE WHEN x > 1 THEN x ELSE 0 END)", DUCK), ("COUNT(CASE WHEN x > 1 THEN 1 END)", DUCK),
+]  # fmt: skip
+
+CATALOG = [
     # --- date/time extraction
     ("YEAR(d)", DUCK), ("QUARTER(d)", DUCK), ("MONTH(d)", DUCK), ("DAY(d)", DUCK), ("DAYOFYEAR(d)", DUCK),
     ("HOUR(ts)", DUCK), ("MINUTE(ts)", DUCK), ("SECOND(ts)", DUCK),
@@ -90,6 +104,11 @@ CATALOG = [
     ("CASE WHEN x > 1 THEN 'a' ELSE 'b' END", DUCK), ("CASE x WHEN 1 THEN 'a' ELSE 'b' END", DUCK),
     ("IF(x > 1, 1, 0)", DUCK), ("IFF(x > 1, 1, 0)", 1), ("NULLIF(x, 1)", DUCK), ("COALESCE(x, 1)", DUCK),
     ("IFNULL(x, 1)", DUCK), ("NVL(x, 1)", 2.5), ("NVL2(x, 1, 0)", 1), ("ZEROIFNULL(x)", 2.5), ("NULLIFZERO(x)", 2.5),
+    # the NULL branches (DuckDB lacks NVL, NVL2, ZEROIFNULL, NULLIFZERO)
+    ("COALESCE(n, 1)", DUCK), ("IFNULL(n, 1)", DUCK), ("NVL(n, 1)", 1), ("NVL2(n, 1, 0)", 0),
+    ("ZEROIFNULL(n)", 0), ("NULLIFZERO(x - 2.5)", None), ("NULLIF(x, 2.5)", DUCK),
+    ("n IS NULL", DUCK), ("n IS NOT NULL", DUCK), ("n > 1", DUCK), ("n + 1", DUCK),
+    ("CASE WHEN n > 1 THEN 'a' ELSE 'b' END", DUCK), ("IF(n IS NULL, 'none', 'some')", DUCK),
     ("x BETWEEN 1 AND 3", DUCK), ("x IN (1, 2, 3)", DUCK), ("x NOT IN (1, 2)", DUCK), ("x IS NULL", DUCK),
     ("x IS NOT NULL", DUCK), ("NOT x > 1", DUCK), ("x > 1 AND x < 3 OR x = 5", DUCK), ("x % 2", DUCK),
     ("x <> 1", DUCK), ("x != 1", DUCK), ("TRUE", DUCK), ("FALSE", DUCK),
@@ -111,12 +130,26 @@ def norm(v):
     return v
 
 
+def check(expr, expected, clickhouse, duck, ch_base, duck_base):
+    got = norm(clickhouse.query(f"SELECT {to_clickhouse(expr)} FROM {ch_base}").result_rows[0][0])
+    if expected is DUCK:
+        expected = duck.execute(f"SELECT {expr} FROM {duck_base}").fetchone()[0]
+    assert got == norm(expected)
+
+
 @pytest.mark.parametrize(("expr", "expected"), CATALOG, ids=[c[0] for c in CATALOG])
 def test_catalog(expr, expected, clickhouse, duck):
-    got = norm(clickhouse.query(f"SELECT {to_clickhouse(expr)} FROM {CH_BASE}").result_rows[0][0])
-    if expected is DUCK:
-        expected = duck.execute(f"SELECT {expr} FROM {DUCK_BASE}").fetchone()[0]
-    assert got == norm(expected)
+    check(expr, expected, clickhouse, duck, CH_BASE, DUCK_BASE)
+
+
+@pytest.mark.parametrize(("expr", "expected"), AGGREGATES, ids=[c[0] for c in AGGREGATES])
+def test_aggregates(expr, expected, clickhouse, duck):
+    check(expr, expected, clickhouse, duck, CH_AGG, DUCK_AGG)
+
+
+def test_percentile_disc_of_nothing_is_null(clickhouse):
+    sql = to_clickhouse("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)")
+    assert clickhouse.query(f"SELECT {sql} FROM {CH_AGG} WHERE x > 100").result_rows == [(None,)]
 
 
 @pytest.mark.parametrize(

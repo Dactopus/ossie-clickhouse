@@ -10,6 +10,13 @@ import os
 
 import pytest
 
+# CI sets this: a missing server, database or privilege is then a failure, not a skip.
+REQUIRED = bool(os.environ.get("OSSIE_CLICKHOUSE_REQUIRED"))
+
+
+def unavailable(reason: str):
+    (pytest.fail if REQUIRED else pytest.skip)(reason)
+
 
 @pytest.fixture(scope="session")
 def duck():
@@ -31,9 +38,17 @@ def clickhouse():
         client = clickhouse_connect.get_client(dsn=url, connect_timeout=2)
         client.command("SELECT 1")
     except Exception as e:
-        pytest.skip(f"no ClickHouse at {url}: {e}")
+        unavailable(f"no ClickHouse at {url}: {e}")
     yield client
     client.close()
+
+
+@pytest.fixture(scope="session")
+def tpcds(clickhouse):
+    """The ClickHouse client, once the TPC-DS reference database is loaded."""
+    if not clickhouse.query("EXISTS DATABASE tpcds").result_rows[0][0]:
+        unavailable("no tpcds database loaded (see CONTRIBUTING.md)")
+    return clickhouse
 
 
 def pytest_collection_modifyitems(items):

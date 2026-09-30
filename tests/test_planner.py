@@ -2,7 +2,7 @@ import pytest
 
 from ossie_clickhouse import load_model
 from ossie_clickhouse.cli import main
-from ossie_clickhouse.planner import PlanError, Planner, Query, source_table
+from ossie_clickhouse.planner import PlanError, Planner, Query, TableInfo, source_table
 from tests.test_model import FIXTURE
 
 MODEL = load_model(FIXTURE)
@@ -15,6 +15,8 @@ def test_source_table():
     assert source_table("t").sql() == "t"
     with pytest.raises(PlanError, match="query sources"):
         source_table("SELECT * FROM t")
+    with pytest.raises(PlanError, match="cannot map"):
+        source_table("a.b.c.d")
 
 
 def test_single_dataset_no_join():
@@ -149,11 +151,35 @@ def test_deterministic():
             "not allowed",
         ),
         (Query(dimensions=("item.i_brand", "store.s_state")), "not joined by direct relationships"),
+        (Query(metrics=("total_sales",), filters=("date_dim.d_year = ",)), "cannot parse"),
     ],
 )
 def test_errors(query, message):
     with pytest.raises(PlanError, match=message.replace("(", r"\(").replace("?", r"\?")):
         P.sql(query)
+
+
+@pytest.mark.parametrize(
+    "f",
+    [
+        "1 = 1; DROP TABLE tpcds.item",
+        "date_dim.d_year = 1 UNION ALL SELECT 1",
+        "date_dim.d_year = 1 SETTINGS max_threads = 1",
+        "date_dim.d_year = {y:UInt16}",
+        "date_dim.d_year IN (SELECT 1)",
+        "EXISTS (SELECT 1)",
+    ],
+)
+def test_filters_cannot_smuggle_statements(f):
+    """Filters come from an agent as free text: expressions only, never statements."""
+    with pytest.raises(PlanError):
+        P.sql(Query(metrics=("total_sales",), filters=(f,)))
+
+
+def test_filters_pass_functions_through():
+    # Any function goes to ClickHouse as written; grants and quotas there are the boundary.
+    sql = P.sql(Query(metrics=("total_sales",), filters=("toString(date_dim.d_year) = '1998'",)))
+    assert "WHERE toString(date_dim.d_year) = '1998'" in sql
 
 
 def test_aggregate_filters_go_to_having():
@@ -248,6 +274,53 @@ def test_selected_names_must_differ():
         _variant(mutate).sql(Query(metrics=("i_brand",), dimensions=("item.i_brand",)))
 
 
+def test_two_roots_are_ambiguous():
+    def mutate(m):
+        m["relationships"] += [
+            {"name": "i2s", "from": "item", "to": "store",
+             "from_columns": ["i_item_sk"], "to_columns": ["s_store_sk"]},
+            {"name": "s2i", "from": "store", "to": "item",
+             "from_columns": ["s_store_sk"], "to_columns": ["i_item_sk"]},
+        ]  # fmt: skip
+
+    with pytest.raises(PlanError, match="ambiguous root dataset among \\['item', 'store'\\]"):
+        _variant(mutate).sql(Query(dimensions=("item.i_brand", "store.s_state")))
+
+
+def test_field_may_only_use_its_own_columns():
+    def mutate(m):
+        item = next(d for d in m["datasets"] if d["name"] == "item")
+        brand = next(f for f in item["fields"] if f["name"] == "i_brand")
+        brand["expression"]["dialects"][0]["expression"] = "store.s_state"
+
+    with pytest.raises(PlanError, match="field item.i_brand references another dataset"):
+        _variant(mutate).sql(Query(dimensions=("item.i_brand",)))
+
+
+def test_catalog_final_and_dictionary():
+    """The executor's catalog changes the SQL shape; pinned here without a server."""
+    catalog = {
+        "store_sales": TableInfo("ReplacingMergeTree", frozenset(), dedup=True),
+        "item": TableInfo("Dictionary", frozenset(), dictionary_key="i_item_sk"),
+    }
+    sql = Planner(MODEL, catalog).sql(
+        Query(metrics=("total_sales",), dimensions=("item.i_brand", "item.i_item_sk"))
+    )
+    assert sql == (
+        "SELECT dictGetOrNull('tpcds.item', 'i_brand', store_sales.ss_item_sk) AS i_brand, "
+        "CASE WHEN dictHas('tpcds.item', store_sales.ss_item_sk) THEN store_sales.ss_item_sk "
+        "ELSE NULL END AS i_item_sk, SUM(store_sales.ss_ext_sales_price) AS total_sales "
+        "FROM tpcds.store_sales AS store_sales FINAL "
+        "GROUP BY dictGetOrNull('tpcds.item', 'i_brand', store_sales.ss_item_sk), "
+        "CASE WHEN dictHas('tpcds.item', store_sales.ss_item_sk) THEN store_sales.ss_item_sk "
+        "ELSE NULL END SETTINGS join_use_nulls = 1"
+    )
+    # A dictionary joined on something other than its key is a plain LEFT JOIN.
+    catalog["item"] = TableInfo("Dictionary", frozenset(), dictionary_key="i_item_id")
+    sql = Planner(MODEL, catalog).sql(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+    assert "LEFT JOIN tpcds.item AS item" in sql and "dictGet" not in sql
+
+
 def test_two_relationships_to_the_same_dataset_are_ambiguous():
     def mutate(m):
         sold = next(r for r in m["relationships"] if r["name"] == "store_sales_to_date")
@@ -265,14 +338,15 @@ def test_cli(capsys):
     assert "unknown metric" in capsys.readouterr().err
 
 
-# --- execution against TPC-DS ------------------------------------------------
+# --- execution against TPC-DS (fixture ``tpcds`` in conftest) -----------------
 
 
-@pytest.fixture(scope="module")
-def tpcds(clickhouse):
-    if not clickhouse.query("EXISTS DATABASE tpcds").result_rows[0][0]:
-        pytest.skip("no tpcds database loaded (see CONTRIBUTING.md)")
-    return clickhouse
+@pytest.mark.parametrize(
+    "ref",
+    [f"{d.name}.{f.name}" for d in MODEL.datasets for f in d.fields],
+)
+def test_every_field_is_a_dimension(ref, tpcds):
+    assert tpcds.query(P.sql(Query(dimensions=(ref,), limit=1))).result_rows
 
 
 def test_no_fan_out_and_no_loss(tpcds):

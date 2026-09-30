@@ -117,6 +117,10 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   and `toDayOfYear`.
 - Table names are `database.table`; Ossie `source` may have three parts.
 - `REGEXP_REPLACE` replaces all matches (spec reading); `DAYOFWEEK` is ISO.
+- `PERCENTILE_DISC` is an index into a sorted `groupArray`, not
+  `quantileExact`, which picks one element too high whenever `p * n` is
+  whole (Postgres semantics: the first value whose cumulative share
+  reaches `p`).
 - Function rewrites live in `translate.py` and work on the SQLGlot AST,
   never on SQL text.
 - `clickhouse-connect` does not decode the `Time` type.

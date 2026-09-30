@@ -160,12 +160,7 @@ class Planner:
             for r in self.model.relationships or []
             if r.from_dataset.upper() == root.name.upper() and r.to.upper() == target.name.upper()
         ]
-        if not found:
-            raise PlanError(
-                f"no direct relationship from {root.name!r} to {target.name!r}; "
-                "this version supports one root dataset and its direct relationships"
-            )
-        if len(found) > 1:
+        if len(found) > 1:  # _root chose a dataset related to every other one
             raise PlanError(
                 f"ambiguous join from {root.name!r} to {target.name!r}: relationships "
                 f"{[r.name for r in found]}; this version cannot choose between them"

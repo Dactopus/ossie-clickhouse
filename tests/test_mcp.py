@@ -54,6 +54,19 @@ def test_describe_dataset_metric_field_and_unknown():
     assert "similar" in describe(MODEL, "sales")["error"]
 
 
+def test_ai_context_forms():
+    from ossie import OssieDocument
+
+    data = MODEL.model_dump(by_alias=True)
+    data["ai_context"] = "plain text instructions"
+    metric = next(m for m in data["metrics"] if m["name"] == "total_sales")
+    metric["ai_context"] = {"instructions": "sum, never average", "examples": ["sales by brand"]}
+    m = OssieDocument.model_validate(data)
+    assert summary(m)["instructions"] == "plain text instructions"
+    d = describe(m, "total_sales")
+    assert d["instructions"] == "sum, never average" and d["examples"] == ["sales by brand"]
+
+
 def test_describe_shows_the_expression_the_planner_runs():
     data = MODEL.model_dump(by_alias=True)
     metric = next(m for m in data["metrics"] if m["name"] == "total_sales")
@@ -75,14 +88,12 @@ def anyio_backend():
 
 
 @pytest.fixture
-async def client(clickhouse):
+async def client(tpcds):
     from mcp import Client
 
     from ossie_clickhouse.mcp_server import build_server
 
-    if not clickhouse.query("EXISTS DATABASE tpcds").result_rows[0][0]:
-        pytest.skip("no tpcds database loaded (see CONTRIBUTING.md)")
-    async with Client(build_server(MODEL, lambda: clickhouse), raise_exceptions=True) as c:
+    async with Client(build_server(MODEL, lambda: tpcds), raise_exceptions=True) as c:
         yield c
 
 
@@ -129,3 +140,9 @@ async def test_query_and_error(client):
     assert values == sorted(values, reverse=True)
     r = await client.call_tool("query", {"metrics": ["total_revenue"]})
     assert not r.is_error and "did you mean: total_sales" in r.structured_content["error"]
+    # A query that plans but fails in ClickHouse is a result too, never an exception.
+    r = await client.call_tool(
+        "query", {"metrics": ["total_sales"], "filters": ["date_dim.d_year = 'abc'"]}
+    )
+    assert not r.is_error and r.structured_content["error"].startswith("ClickHouse: ")
+    assert "\n" not in r.structured_content["error"]

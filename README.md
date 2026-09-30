@@ -71,6 +71,9 @@ print(r.sql, r.columns, r.rows[:3])
   an aggregate (`total_sales > 1000000`) go to `HAVING`, and may only use
   the question's own dimensions besides aggregates. A window metric
   (`RANK() OVER ...`) cannot be filtered: select it and filter the rows.
+  A filter is one expression, never a statement, and its functions reach
+  ClickHouse as written: what a caller may run there is decided by
+  ClickHouse grants and quotas, not by this library.
 - Tables with a [`Replacing*`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
   engine are read with [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier);
   single-key [dictionaries](https://clickhouse.com/docs/sql-reference/dictionaries) are read with

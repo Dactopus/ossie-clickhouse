@@ -33,7 +33,12 @@ def test_translate_uses_picked_dialect():
         # aggregates
         ("VAR_POP(x)", "varPop(x)"),
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)", "quantile(0.5)(x)"),
-        ("PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x DESC)", "quantileExact(1 - 0.9)(x)"),
+        ("PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY x DESC)", "quantile(1 - 0.9)(x)"),
+        (
+            "PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x DESC)",
+            "if(COUNT(x) = 0, NULL, arrayElement(arrayReverseSort(groupArray(x)), "
+            "toUInt64(GREATEST(CEIL(0.9 * COUNT(x)), 1))))",
+        ),
         ("APPROX_PERCENTILE(x, 0.5)", "quantileTDigest(0.5)(x)"),
         ("APPROX_COUNT_DISTINCT(x)", "uniq(x)"),
         # date/time

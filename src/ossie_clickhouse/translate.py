@@ -153,11 +153,33 @@ def _rewrite(node: exp.Expression) -> exp.Expression:
         node.this, exp.PercentileCont | exp.PercentileDisc
     ):
         order = node.expression.expressions[0]
-        p = node.this.this
-        if order.args.get("desc"):
-            p = exp.Sub(this=exp.Literal.number(1), expression=p)
-        name = "quantile" if isinstance(node.this, exp.PercentileCont) else "quantileExact"
-        return _param_agg(name, p, order.this)
+        p, arg, desc = node.this.this, order.this, bool(order.args.get("desc"))
+        if isinstance(node.this, exp.PercentileCont):
+            if desc:
+                p = exp.Sub(this=exp.Literal.number(1), expression=p)
+            return _param_agg("quantile", p, arg)
+        # Spec (Postgres semantics): the first value whose cumulative share reaches p,
+        # so element ceil(p * n) of the sorted values (1-based, at least 1), NULL for
+        # an empty set. quantileExact takes element floor(p * n) + 1: one too high
+        # whenever p * n is whole.
+        n = exp.Count(this=arg)
+        index = _f(
+            "toUInt64",
+            exp.Greatest(
+                this=exp.Ceil(this=exp.Mul(this=p, expression=n)),
+                expressions=[exp.Literal.number(1)],
+            ),
+        )
+        values = _f(
+            "arrayReverseSort" if desc else "arraySort",
+            exp.AnonymousAggFunc(this="groupArray", expressions=[arg]),
+        )
+        return _f(
+            "if",
+            exp.EQ(this=n.copy(), expression=exp.Literal.number(0)),
+            exp.Null(),
+            _f("arrayElement", values, index),
+        )
     if isinstance(node, exp.VariancePop):
         return _f("varPop", node.this)
     if isinstance(node, exp.CurrentTime):
