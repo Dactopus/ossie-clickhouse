@@ -5,14 +5,15 @@ Errors come back as results with an ``error`` field so the planner's
 "did you mean" hints reach the agent verbatim.
 
 Runs over stdio with ClickHouse credentials from the environment, so one
-process serves one ClickHouse user and access control (Phase 5) applies
-unchanged. ``client_factory`` is the seam for a remote server that maps a
-caller's identity to a ClickHouse connection.
+process serves one ClickHouse user and access control applies unchanged.
+``client_factory`` is the seam for a remote server that maps a caller's
+identity to a ClickHouse connection.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from importlib.metadata import version
 from typing import Any
 
 from ossie import OssieDocument
@@ -131,6 +132,7 @@ def build_server(
     m = executor.model  # trimmed to what the connected user may see
     server = MCPServer(
         "ossie-clickhouse",
+        version=version("ossie-clickhouse"),
         instructions=(
             f"Semantic model '{m.name}' over ClickHouse. Ask in business terms: pick metrics "
             "and dimensions by name, never write SQL. Start with list_model. Never add up or "

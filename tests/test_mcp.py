@@ -97,6 +97,14 @@ async def client(tpcds):
         yield c
 
 
+def test_server_reports_the_package_version(tpcds):
+    from importlib.metadata import version
+
+    from ossie_clickhouse.mcp_server import build_server
+
+    assert build_server(MODEL, lambda: tpcds).version == version("ossie-clickhouse")
+
+
 @pytest.mark.anyio
 async def test_tools_listed(client):
     tools = await client.list_tools()

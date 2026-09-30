@@ -96,6 +96,9 @@ def test_order_by():
         P.sql(Query(metrics=("total_sales",), order_by=("total_sale",)))
     with pytest.raises(PlanError, match="use 'name'"):
         P.sql(Query(metrics=("total_sales",), order_by=("total_sales down",)))
+    # i_brand is selectable as "i_brand" and "item.i_brand"; the hint names it once.
+    with pytest.raises(PlanError, match=r"\(did you mean: i_brand\?\)$"):
+        P.sql(Query(metrics=("total_sales",), dimensions=("item.i_brand",), order_by=("brand",)))
 
 
 def test_deterministic():
@@ -279,6 +282,12 @@ def test_selected_names_must_differ():
     with pytest.raises(PlanError, match="two selected columns named 'I_BRAND'"):
         _variant(mutate).sql(Query(metrics=("i_brand",), dimensions=("item.i_brand",)))
 
+    def same_field_name(m):
+        next(d for d in m["datasets"] if d["name"] == "store")["fields"][0]["name"] = "i_brand"
+
+    with pytest.raises(PlanError, match="fields of two datasets, cannot share a name"):
+        _variant(same_field_name).sql(Query(dimensions=("item.i_brand", "store.i_brand")))
+
 
 def test_two_roots_are_ambiguous():
     def mutate(m):
@@ -342,6 +351,15 @@ def test_cli(capsys):
     assert out.startswith("SELECT\n") and "LEFT JOIN tpcds.item" in out
     assert main(["sql", str(FIXTURE), "-m", "nope"]) == 1
     assert "unknown metric" in capsys.readouterr().err
+
+
+def test_cli_reports_connection_and_policy_errors_without_traceback(capsys):
+    nowhere = "http://127.0.0.1:9"  # nothing listens; a refused connection is an error line
+    assert main(["sql", str(FIXTURE), "-m", "total_sales", "--url", nowhere]) == 1
+    assert capsys.readouterr().err.startswith("error: ")
+    args = ["sql", str(FIXTURE), "-m", "total_sales", "--url", nowhere, "--policy", "nope.yaml"]
+    assert main(args) == 1
+    assert "nope.yaml" in capsys.readouterr().err
 
 
 # --- execution against TPC-DS (fixture ``tpcds`` in conftest) -----------------

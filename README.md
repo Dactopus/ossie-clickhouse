@@ -148,7 +148,7 @@ are the stable surface.
 Where it goes from here: PyPI once `apache-ossie` is published there; the
 upstream Ossie SQL dialect and compliance suite once they merge; multi-fact
 questions, fan-out protection for one-to-many joins, `source` as a query
-and a remote multi-user MCP server on the first real request. Each waits
+and a remote multi-user MCP server on the first real request. Ask for one
 in the [issue tracker](https://github.com/Dactopus/ossie-clickhouse/issues).
 
 ## License

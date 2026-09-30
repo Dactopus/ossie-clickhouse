@@ -216,8 +216,8 @@ class Planner:
         def alias(name: str) -> str:
             if name.upper() in seen_aliases:
                 raise PlanError(
-                    f"two selected columns named {name!r}; a metric and a dimension "
-                    "cannot share a name in one query"
+                    f"two selected columns named {name!r}: a metric and a dimension, or "
+                    "fields of two datasets, cannot share a name in one query"
                 )
             seen_aliases.add(name.upper())
             return name
@@ -323,7 +323,7 @@ class Planner:
             if alias is None:
                 raise PlanError(
                     f"order_by {name!r} is not a selected metric or dimension"
-                    f"{_suggest(name, aliases.values())}"
+                    f"{_suggest(name, dict.fromkeys(aliases.values()))}"
                 )
             out.append(exp.Ordered(this=exp.column(alias), desc=desc, nulls_first=not desc))
         return out

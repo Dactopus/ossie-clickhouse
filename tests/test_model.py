@@ -104,3 +104,11 @@ def test_cli(tmp_path, tpcds, capsys):
     assert "1 problem(s)" in capsys.readouterr().err
     assert main(["serve", str(bad)]) == 1  # fails before touching ClickHouse
     assert "unsupported version" in capsys.readouterr().err
+
+
+def test_cli_serve_without_mcp_extra(monkeypatch, capsys):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "mcp.server", None)  # what a bare install looks like
+    assert main(["serve", str(FIXTURE)]) == 1
+    assert "pip install 'ossie-clickhouse[mcp]'" in capsys.readouterr().err

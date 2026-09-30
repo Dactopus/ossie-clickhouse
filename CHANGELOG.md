@@ -5,9 +5,9 @@ All notable changes to this project are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). While the major version is 0,
 a minor release may change the Python API.
 
-## Unreleased
+## [Unreleased]
 
-## 0.1.0
+## [0.1.0] - 2026-09-30
 
 First release. Ossie schema `0.2.0.dev0`, tested on ClickHouse 26.x with
 the TPC-DS reference model.

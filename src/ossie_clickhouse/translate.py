@@ -61,7 +61,9 @@ class _OssieParser(Parser):
 
 
 class OssieSQL(Dialect):
-    """ponytail: mirrors apache/ossie PR #222; replace with read="ossie" once it merges."""
+    """SQLGlot's default dialect plus the spec shapes it parses differently.
+
+    Mirrors apache/ossie PR #222; switch to ``read="ossie"`` once it merges."""
 
     Parser = _OssieParser
 

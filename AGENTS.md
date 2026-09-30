@@ -155,4 +155,4 @@ package level only when a module outgrows one file.
 
 ## Repository status
 
-First release prepared (see [CHANGELOG.md](CHANGELOG.md)); not yet public, no release tag. Decisions with their evidence are in [docs/design.md](docs/design.md).
+Version 0.1.0 is the first release (see [CHANGELOG.md](CHANGELOG.md)); installed from git until `apache-ossie` reaches PyPI. Decisions with their evidence are in [docs/design.md](docs/design.md).

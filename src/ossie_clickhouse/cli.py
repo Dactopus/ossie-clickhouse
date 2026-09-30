@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from decimal import Decimal
+
+import yaml
+from clickhouse_connect.driver.exceptions import ClickHouseError
 
 from ossie_clickhouse.access import Policy
 from ossie_clickhouse.executor import Executor, connect
@@ -13,7 +17,7 @@ from ossie_clickhouse.model import ModelError, load_model
 from ossie_clickhouse.planner import PlanError, Planner, Query
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ossie-clickhouse")
     sub = parser.add_subparsers(dest="command", required=True)
     v = sub.add_parser("validate", help="check an Ossie model file")
@@ -43,42 +47,56 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("model", help="path to a YAML or JSON Ossie model")
     sv.add_argument("--url", help="ClickHouse HTTP URL (default $OSSIE_CLICKHOUSE_URL)")
     sv.add_argument("--policy", help="YAML file hiding objects per ClickHouse user or role")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    # clickhouse-connect logs a connection failure before raising it; the error line
+    # below is enough. A NullHandler keeps the unconfigured-logging fallback quiet.
+    logging.getLogger("clickhouse_connect").addHandler(logging.NullHandler())
+    args = _parser().parse_args(argv)
+    try:
+        return _run(args)
+    except ModelError as e:
+        for p in e.problems:
+            print(f"error: {p}", file=sys.stderr)
+        print(f"{args.model}: {len(e.problems)} problem(s)", file=sys.stderr)
+        return 1
+    # PlanError for the question; ClickHouseError for a server that is down, refuses the
+    # credentials or the query; the rest for a policy file that is missing or malformed,
+    # and for `serve` without the [mcp] extra. None of them deserves a traceback.
+    except (PlanError, ClickHouseError, OSError, ValueError, yaml.YAMLError, ImportError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
+def _run(args: argparse.Namespace) -> int:
+    policy = Policy.load(args.policy) if getattr(args, "policy", None) else None
 
     if args.command == "serve":
         from ossie_clickhouse.mcp_server import build_server
 
-        try:
-            policy = Policy.load(args.policy) if args.policy else None
-            server = build_server(load_model(args.model), lambda: connect(args.url), policy)
-        except ModelError as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 1
+        server = build_server(load_model(args.model), lambda: connect(args.url), policy)
         server.run()  # stdio
         return 0
 
     if args.command in ("sql", "query"):
-        try:
-            model = load_model(args.model)
-            q = Query(
-                tuple(args.metric),
-                tuple(args.dimension),
-                tuple(args.filter),
-                tuple(args.order),
-                args.limit,
-            )
-            if args.command == "sql" and not args.url:
-                print(Planner(model).sql(q, pretty=True))
-                return 0
-            policy = Policy.load(args.policy) if args.policy else None
-            ex = Executor(connect(args.url), model, policy)
-            if args.command == "sql":
-                print(ex.planner.sql(q, pretty=True))
-                return 0
-            r = ex.execute(q)
-        except (ModelError, PlanError) as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 1
+        model = load_model(args.model)
+        q = Query(
+            tuple(args.metric),
+            tuple(args.dimension),
+            tuple(args.filter),
+            tuple(args.order),
+            args.limit,
+        )
+        if args.command == "sql" and not args.url:
+            print(Planner(model).sql(q, pretty=True))
+            return 0
+        ex = Executor(connect(args.url), model, policy)
+        if args.command == "sql":
+            print(ex.planner.sql(q, pretty=True))
+            return 0
+        r = ex.execute(q)
         if args.json:
             rows = [dict(zip(r.columns, row, strict=True)) for row in r.rows]
             print(
@@ -90,29 +108,23 @@ def main(argv: list[str] | None = None) -> int:
                 print("\t".join("" if v is None else str(v) for v in row))
         return 0
 
-    if args.command == "validate":
-        try:
-            doc = load_model(args.model)
-        except ModelError as e:
-            for p in e.problems:
-                print(f"error: {p}", file=sys.stderr)
-            print(f"{args.model}: {len(e.problems)} problem(s)", file=sys.stderr)
+    # validate
+    doc = load_model(args.model)
+    if args.url:
+        ex = Executor(connect(args.url), doc)
+        problems = ex.check()
+        for p in problems:
+            print(f"error: {p}", file=sys.stderr)
+        if problems:
+            where = ex.client.url  # never args.url: it may carry the password
+            print(f"{args.model}: {len(problems)} problem(s) against {where}", file=sys.stderr)
             return 1
-        if args.url:
-            problems = Executor(connect(args.url), doc).check()
-            for p in problems:
-                print(f"error: {p}", file=sys.stderr)
-            if problems:
-                print(
-                    f"{args.model}: {len(problems)} problem(s) against {args.url}", file=sys.stderr
-                )
-                return 1
-        n_fields = sum(len(d.fields or []) for d in doc.datasets)
-        print(
-            f"{args.model}: ok ({doc.name}, version {doc.version}, "
-            f"{len(doc.datasets)} datasets, {n_fields} fields, "
-            f"{len(doc.relationships or [])} relationships, {len(doc.metrics or [])} metrics)"
-        )
+    n_fields = sum(len(d.fields or []) for d in doc.datasets)
+    print(
+        f"{args.model}: ok ({doc.name}, version {doc.version}, "
+        f"{len(doc.datasets)} datasets, {n_fields} fields, "
+        f"{len(doc.relationships or [])} relationships, {len(doc.metrics or [])} metrics)"
+    )
     return 0
 
 
