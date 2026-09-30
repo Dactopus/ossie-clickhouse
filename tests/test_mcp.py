@@ -69,7 +69,7 @@ async def client(clickhouse):
     from ossie_clickhouse.mcp_server import build_server
 
     if not clickhouse.query("EXISTS DATABASE tpcds").result_rows[0][0]:
-        pytest.skip("no tpcds database loaded (see spikes/phase0/README.md)")
+        pytest.skip("no tpcds database loaded (see CONTRIBUTING.md)")
     async with Client(build_server(MODEL, lambda: clickhouse), raise_exceptions=True) as c:
         yield c
 

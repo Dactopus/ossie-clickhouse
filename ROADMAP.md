@@ -5,8 +5,7 @@ with something runnable. No dates: the order is a commitment, the pace is not.
 
 ## Phase 0: Feasibility spike (done)
 
-Completed 2026-09-30. Findings in [docs/phase-0-findings.md](docs/phase-0-findings.md).
-The SQLGlot-based translation design holds. Later phases below were adjusted
+Completed 2026-09-30. The SQLGlot-based translation design holds. Later phases below were adjusted
 from the findings.
 
 ## Phase 1: Model loader (done)
@@ -31,8 +30,9 @@ value with DuckDB, or with a hand-pinned expectation where DuckDB lacks the
 function or disagrees with the spec; every TPC-DS field and metric executed
 against loaded data. Decisions recorded in the tests: `REGEXP_REPLACE`
 replaces all matches, `DAYOFWEEK` is ISO (Monday = 1), `MILLISECOND` is the
-component. PR #222 evaluation in
-[docs/phase-2-pr222-evaluation.md](docs/phase-2-pr222-evaluation.md).
+component. apache/ossie PR #222 (an Ossie dialect for SQLGlot) was
+evaluated and not depended on: it parses and validates the spec's SQL,
+the ClickHouse mapping stays our work either way.
 
 Left open, on purpose:
 

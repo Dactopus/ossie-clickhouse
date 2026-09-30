@@ -176,7 +176,7 @@ def test_cli(capsys):
 @pytest.fixture(scope="module")
 def tpcds(clickhouse):
     if not clickhouse.query("EXISTS DATABASE tpcds").result_rows[0][0]:
-        pytest.skip("no tpcds database loaded (see spikes/phase0/README.md)")
+        pytest.skip("no tpcds database loaded (see CONTRIBUTING.md)")
     return clickhouse
 
 
