@@ -77,7 +77,13 @@ Python library with a CLI entry point. Details in the README section
   `system.dictionaries`, not from asking the user. Overrides go in the model's
   `custom_extensions` under `vendor_name: clickhouse`.
 - Query planning is deterministic: datasets from `source`, joins from
-  `relationships`, one `SELECT` per question.
+  `relationships`, one `SELECT` per question. Joins are `LEFT JOIN` from
+  one root dataset, only along relationships whose `to_columns` are a
+  primary or unique key of the target. Generated SQL carries
+  `SETTINGS join_use_nulls = 1` so unmatched rows get NULL, not defaults.
+- Name resolution is case-insensitive (spec rule); emitted SQL uses physical
+  names exactly as the model writes them (ClickHouse is case-sensitive).
+- Planner errors name the nearest known object; agents recover from that.
 
 ## Testing
 
@@ -129,4 +135,4 @@ package level only when a module outgrows one file.
 
 ## Repository status
 
-Phases 0 to 2 done (see [ROADMAP.md](ROADMAP.md)).
+Phases 0 to 3 done (see [ROADMAP.md](ROADMAP.md)).

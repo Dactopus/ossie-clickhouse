@@ -42,36 +42,26 @@ Left open, on purpose:
 - No validation of disallowed constructs (subqueries, `SELECT`) yet; add
   when the planner needs to trust expressions, or take it from PR #222.
 
-## Phase 3: Query planner, minimum
+## Phase 3: Query planner, minimum (done)
 
-- Semantic query API: metrics, dimensions, filters. Filters are Ossie
-  expressions, translated like any other.
-- Reference resolution: walk each expression's AST, find `dataset.field`
-  references, resolve them against the model case-insensitively (the spec
-  normalizes unquoted identifiers to upper case, ClickHouse is
-  case-sensitive), inline field expressions, and emit physical names in
-  their real case.
-- Mapping rule from Ossie `source` names (three-part, e.g.
-  `tpcds.public.store_sales`) to ClickHouse `database.table`. Table and view
-  sources only; `source` as a query is deferred.
-- Queries over a single dataset, then joins along direct `relationships`
-  between two datasets. A join is allowed only when `to_columns` match the
-  primary key or a unique key of the target dataset, which is what makes it
-  many-to-one and safe from fan-out. The spec has no cardinality attribute,
-  so this is inferred, and anything else is rejected with a clear message.
-- Window metrics over aggregates (running totals, ranks, period deltas, as
-  in the TPC-DS reference model) pass through in the same `SELECT`. The
-  spec has no way to declare a metric's required grain, so the planner
-  cannot check that the right dimensions were requested; note as a spec gap.
-- Validation of disallowed constructs in expressions (subqueries, `SELECT`),
-  since the planner now has to trust them.
-- One deterministic `SELECT` per question. Snapshot tests on generated SQL,
-  plus execution against TPC-DS.
-- CLI: `ossie-clickhouse sql <model> --metric ... --dimension ... --filter ...`.
-- CI: GitHub Actions running the suite with a ClickHouse service container.
+Completed 2026-09-30. `planner.py` takes metrics, dimensions and filters,
+resolves `dataset.field` references case-insensitively, inlines field
+expressions, picks the one root dataset with direct relationships to every
+other dataset used, and emits one `SELECT` with `LEFT JOIN`s and
+`SETTINGS join_use_nulls = 1`. Joins are allowed only when `to_columns`
+match a primary or unique key of the target (inferred many-to-one; the spec
+has no cardinality attribute). Window metrics over aggregates pass through
+in the same `SELECT`; the spec cannot declare a metric's required grain, so
+that is not checked. Expressions are rejected if they contain subqueries or
+statements. Errors name the nearest known metric, field or dataset.
+CLI: `ossie-clickhouse sql`. CI: GitHub Actions with a ClickHouse service.
 
-Explicitly deferred to Phase 8: multi-fact queries, joins that are not
-many-to-one, metrics over metrics.
+Tests: SQL snapshots, error messages, and execution against TPC-DS,
+including a check that grouping by joined dimensions neither multiplies nor
+drops fact rows.
+
+Deferred to Phase 8: multi-fact queries, joins that are not many-to-one,
+metrics over metrics, filters on aggregates (`HAVING`), `source` as a query.
 
 ## Phase 4: Executor
 
