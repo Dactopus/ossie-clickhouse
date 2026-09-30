@@ -85,10 +85,29 @@ handling, and database-level validation messages.
 
 ## Phase 5: Access control
 
-- Local configuration mapping roles to visible datasets, fields and metrics.
-- Enforced in the executor, before planning touches anything the role may
-  not see.
-- Tests that a denied object never appears in generated SQL or in errors.
+ClickHouse is the source of truth for who may see which data. Its users,
+roles, grants and row policies are already managed there, often through
+LDAP or SSO, and a separate list of roles in a local file would drift from
+it. So:
+
+- The executor runs each query as the ClickHouse user who is asking. Row
+  policies and column grants apply on their own.
+- The model shown to a caller is trimmed to what their ClickHouse user can
+  read: datasets whose source they cannot select from disappear, along with
+  the relationships and metrics that depend on them. Visibility comes from
+  `system.grants` and `system.role_grants`, checked once per user and
+  cached.
+- An optional local file adds restrictions the database cannot express:
+  hiding a metric or a field from a role even though its tables are
+  readable. Keyed by ClickHouse user or role name, never a parallel
+  identity.
+- A hidden object never appears in generated SQL, error messages or
+  "did you mean" suggestions.
+- Who the caller is comes from outside: the connection's credentials, an
+  MCP client configured per agent, or an identity passed by the MCP
+  transport (Phase 6). This project does not authenticate anyone.
+- The no-configuration case, one ClickHouse user for everyone, keeps
+  working with nothing to set up.
 
 ## Phase 6: MCP server
 

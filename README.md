@@ -23,7 +23,7 @@ Apache Ossie solves this at the level of description: one definition of revenue 
 1. Reads and validates a data description against the Ossie standard.
 2. Translates metric definitions from the standard's portable expression language into ClickHouse SQL, and handles ClickHouse specifics on its own: which tables keep change history and need deduplication, which reference data lives in dictionaries. Users do not need to know about any of this.
 3. Accepts a question in business terms: metrics, dimensions, filters. Works out which tables to join and how, and runs the query.
-4. Serves the data description, including the standard's AI hints, to AI agents, and accepts their questions over MCP, the common protocol agents use to talk to external systems. Who may see what is set by a local access configuration.
+4. Serves the data description, including the standard's AI hints, to AI agents, and accepts their questions over MCP, the common protocol agents use to talk to external systems. Who may see what is decided by ClickHouse's own users, roles and row policies; the model each caller sees is trimmed to match.
 
 ## What it is not
 
@@ -37,9 +37,9 @@ This is the intended design, not a description of working code.
 - **Model loading.** Reads Ossie YAML or JSON and validates it against the official JSON schema from the Ossie repository. The supported schema version is pinned and checked explicitly, since the standard is still moving.
 - **Expression translation.** Metric and field expressions are taken in `OSSIE_SQL_2026`, the standard's portable dialect, and translated to ClickHouse SQL with [SQLGlot](https://github.com/tobymao/sqlglot), which already has a ClickHouse dialect. An Ossie dialect for SQLGlot is being contributed upstream (apache/ossie PR #222); until it lands, `OSSIE_SQL_2026` is parsed as ANSI SQL, of which it is a subset. If a model carries no `OSSIE_SQL_2026` expression, the `ANSI_SQL` one is used.
 - **Query planning.** A semantic query (metrics, dimensions, filters) is resolved against the model: datasets come from `source`, join paths from `relationships`, and the result is a single deterministic `SELECT`. Same model and same question always produce the same SQL.
-- **ClickHouse specifics by introspection.** The executor asks ClickHouse rather than the user: `system.tables` tells it each table's engine (so it knows when a `ReplacingMergeTree` needs deduplication), and `system.dictionaries` tells it which reference data can be read with `dictGet`. Overrides live in the model's `custom_extensions` under `vendor_name: clickhouse`, a namespace owned by this project.
+- **ClickHouse specifics by introspection.** The executor asks ClickHouse rather than the user: `system.tables` tells it each table's engine (so it knows when a `ReplacingMergeTree` needs deduplication), and `system.dictionaries` tells it which reference data can be read with `dictGet`. Overrides live in the model's `custom_extensions` under `vendor_name: CLICKHOUSE`, a namespace owned by this project.
 - **Execution.** Queries run through `clickhouse-connect` over HTTP, against self-hosted ClickHouse or ClickHouse Cloud alike.
-- **Access control.** A local configuration maps roles to the datasets, fields, and metrics they may see. It is enforced inside the executor; the MCP layer only passes on who is asking.
+- **Access control.** Delegated to ClickHouse. Queries run as the ClickHouse user who is asking, so its grants and row policies apply, and the model served to that user is trimmed to the sources they can read. An optional local file adds model-level restrictions (hide a metric from a role) that the database cannot express. Identity comes from the connection or the MCP transport; this project authenticates no one.
 - **MCP server.** A thin adapter over the library's public API exposing a handful of tools: list the model, describe an object with its `ai_context`, run a semantic query.
 - **Testing.** Against the TPC-DS reference model shipped with the Ossie repository, loaded into a local ClickHouse, plus unit tests for translation.
 
