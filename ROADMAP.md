@@ -133,7 +133,9 @@ TPC-DS; a raw stdio handshake was checked by hand.
 - Filters on aggregates (done): a filter that names a metric
   (`total_sales > 1000000`) or contains an aggregate goes to `HAVING`,
   the rest to `WHERE`. Same `filters` list, no new parameter.
-- Packaging and publication to PyPI.
+- Packaging: installable with `pip install git+https://github.com/Dactopus/ossie-clickhouse`.
+  PyPI itself refuses packages with a git dependency, and `apache-ossie` is
+  one until upstream publishes; see "Waiting for a trigger".
 - Documentation: installation, model authoring for ClickHouse, CLI, MCP
   setup with desktop agents, access control through ClickHouse.
 - Contribution guide.
@@ -143,6 +145,14 @@ TPC-DS; a raw stdio handshake was checked by hand.
 
 Everything below is a recorded decision, not a phase: phases are what we
 do on our own initiative, these wait for something outside the project.
+
+### Waiting for a trigger: upstream releases
+
+- `apache-ossie` on PyPI: switch the git pin to the release and publish
+  `ossie-clickhouse` to PyPI. Until then installation is from GitHub.
+- apache/ossie PR #222 merged: switch expression parsing to the upstream
+  dialect. PR #237 merged: adopt the compliance suite in place of the
+  hand-pinned expectations.
 
 ### Waiting for a trigger: MCP server, remote
 
@@ -205,8 +215,5 @@ the first real request, not before.
 
 - Track Ossie schema changes; bump the pinned version deliberately, never
   implicitly.
-- Switch `apache-ossie` from the git pin to the PyPI release once published.
-- Switch expression parsing to the upstream dialect once apache/ossie
-  PR #222 merges; adopt the compliance suite (PR #237) when it lands.
 - Contribute ClickHouse-specific findings upstream where the standard is
   silent.
