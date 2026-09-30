@@ -58,4 +58,4 @@ printf '%s\n' \
 The process runs as one ClickHouse user. Give each agent its own user with
 the grants and row policies it should have; the model it sees is trimmed
 to match. `--policy policy.yaml` hides further objects per user or role.
-A remote, multi-user server with OAuth is planned (roadmap, Phase 6b).
+A remote, multi-user server with OAuth is designed but not scheduled (see ROADMAP.md, "Not scheduled").
