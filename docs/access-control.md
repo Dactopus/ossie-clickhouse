@@ -19,6 +19,8 @@ and `system.columns` only what the connected user may read. Before planning, the
 
 - a dataset whose source the user cannot read is removed;
 - a field whose column the user cannot read is removed;
+- a relationship whose join columns the user cannot read is removed, so
+  they never appear in generated SQL or in a ClickHouse error;
 - relationships and metrics that rest on anything removed go with them.
 
 A hidden object never appears in SQL, in error messages or in "did you

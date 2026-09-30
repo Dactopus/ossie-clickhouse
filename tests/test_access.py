@@ -26,6 +26,7 @@ CREATE ROW POLICY de_only ON ossie_test.orders FOR SELECT
   USING country_code = 'DE' TO ossie_analyst;
 CREATE USER ossie_clerk IDENTIFIED WITH no_password;
 GRANT SELECT(order_id, amount) ON ossie_test.orders TO ossie_clerk;
+GRANT SELECT ON ossie_test.country TO ossie_clerk;
 """
 POLICY = Path(__file__).parent / "fixtures" / "policy.yaml"
 
@@ -57,6 +58,30 @@ def test_policy_matches_user_and_roles():
     p = Policy.load(POLICY)
     assert p.hidden_for("ossie_analyst", ["ossie_sales"]).metrics == {"spread"}
     assert p.hidden_for("someone", []) == Hidden()
+
+
+def test_policy_accepts_empty_rule_and_rejects_wrong_shape(tmp_path):
+    p = tmp_path / "policy.yaml"
+    p.write_text("analyst:\nclerk:\n  hidden_metrics: [spread]\n")
+    assert Policy.load(p).hidden_for("analyst", []) == Hidden()
+    assert Policy.load(p).hidden_for("clerk", []).metrics == {"spread"}
+    p.write_text("- analyst\n")
+    with pytest.raises(ValueError, match="expected a mapping"):
+        Policy.load(p)
+    p.write_text("analyst: [spread]\n")
+    with pytest.raises(ValueError, match="expected a mapping"):
+        Policy.load(p)
+
+
+def test_restrict_with_nothing_left_is_a_readable_error():
+    with pytest.raises(PlanError, match="none of the model's datasets is readable"):
+        restrict(MODEL, Hidden(datasets=frozenset(d.name for d in MODEL.datasets)))
+
+
+def test_restrict_drops_relationship_by_name():
+    m = restrict(MODEL, Hidden(relationships=frozenset({"STORE_SALES_TO_ITEM"})))
+    assert "store_sales_to_item" not in {r.name for r in m.relationships}
+    assert len(m.relationships) == len(MODEL.relationships) - 1
 
 
 # --- against ClickHouse -------------------------------------------------------
@@ -102,8 +127,12 @@ def test_column_grant_hides_field_and_dependents(admin):
     ex = Executor(as_user(admin, "ossie_clerk"), load_model(FIXTURE))
     orders = next(d for d in ex.model.datasets if d.name == "orders")
     assert {f.name for f in orders.fields} == {"order_id", "amount"}
-    assert ex.model.relationships == []  # needs country_code, and country is unreadable anyway
+    assert "country" in {d.name for d in ex.model.datasets}  # readable on its own
+    assert ex.model.relationships == []  # the join needs country_code, which the clerk cannot read
     assert ex.execute(Query(metrics=("revenue",))).rows == [(65.0,)]
+    with pytest.raises(PlanError) as e:
+        ex.execute(Query(metrics=("revenue",), dimensions=("country.name",)))
+    assert "country_code" not in str(e.value)
 
 
 def test_policy_file_hides_metric_for_role(admin):

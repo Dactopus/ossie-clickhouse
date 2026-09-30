@@ -155,18 +155,28 @@ class Planner:
     # --- joins --------------------------------------------------------------
 
     def _relationship(self, root: OssieDataset, target: OssieDataset) -> OssieRelationship:
-        for r in self.model.relationships or []:
-            if r.from_dataset.upper() == root.name.upper() and r.to.upper() == target.name.upper():
-                if not self._is_many_to_one(r, target):
-                    raise PlanError(
-                        f"relationship {r.name!r} is not many-to-one: to_columns "
-                        f"{r.to_columns} are not a primary or unique key of {target.name!r}"
-                    )
-                return r
-        raise PlanError(
-            f"no direct relationship from {root.name!r} to {target.name!r}; "
-            "this version supports one root dataset and its direct relationships"
-        )
+        found = [
+            r
+            for r in self.model.relationships or []
+            if r.from_dataset.upper() == root.name.upper() and r.to.upper() == target.name.upper()
+        ]
+        if not found:
+            raise PlanError(
+                f"no direct relationship from {root.name!r} to {target.name!r}; "
+                "this version supports one root dataset and its direct relationships"
+            )
+        if len(found) > 1:
+            raise PlanError(
+                f"ambiguous join from {root.name!r} to {target.name!r}: relationships "
+                f"{[r.name for r in found]}; this version cannot choose between them"
+            )
+        r = found[0]
+        if not self._is_many_to_one(r, target):
+            raise PlanError(
+                f"relationship {r.name!r} is not many-to-one: to_columns "
+                f"{r.to_columns} are not a primary or unique key of {target.name!r}"
+            )
+        return r
 
     @staticmethod
     def _is_many_to_one(r: OssieRelationship, target: OssieDataset) -> bool:
@@ -203,27 +213,36 @@ class Planner:
         used: set[str] = set()
         selects: list[exp.Expression] = []
         group: list[exp.Expression] = []
-        seen_aliases: set[str] = set()
+        seen_aliases: set[str] = set()  # upper-cased: ORDER BY resolves names case-insensitively
+
+        def alias(name: str) -> str:
+            if name.upper() in seen_aliases:
+                raise PlanError(
+                    f"two selected columns named {name!r}; a metric and a dimension "
+                    "cannot share a name in one query"
+                )
+            seen_aliases.add(name.upper())
+            return name
 
         for ref in q.dimensions:
             ds, f = self.field_ref(ref)
             used.add(ds.name)
-            if f.name in seen_aliases:
-                raise PlanError(f"two dimensions named {f.name!r}; use one per query")
-            seen_aliases.add(f.name)
             e = self._field_expr(ds, f)
-            selects.append(e.as_(f.name))
+            selects.append(e.as_(alias(f.name)))
             group.append(e.copy())
 
         for name in q.metrics:
             m = self.metric(name)
-            selects.append(self.resolve(pick_expression(m.expression), used).as_(m.name))
+            selects.append(self.resolve(pick_expression(m.expression), used).as_(alias(m.name)))
 
         where: list[exp.Expression] = []
         having: list[exp.Expression] = []  # filters over aggregates or metric names
-        grouped = {e.sql() for e in group}
+        # Rewrite before inspecting: APPROX_PERCENTILE is a plain function name to
+        # SQLGlot and an aggregate only after _rewrite. _rewrite is idempotent, so
+        # the final pass over the whole SELECT leaves these nodes as they are.
+        grouped = {e.transform(_rewrite).sql() for e in group}
         for f in q.filters:
-            tree = self.resolve(f, used, metrics=True)
+            tree = self.resolve(f, used, metrics=True).transform(_rewrite)
             if tree.find(exp.Window):
                 raise PlanError(
                     f"filter {f!r} uses a window function; a window metric cannot be "
@@ -292,7 +311,7 @@ class Planner:
         """ORDER BY over selected aliases; names are metrics, dataset.field, or field names."""
         aliases = {e.alias.upper(): e.alias for e in selects}
         for ref in q.dimensions:  # allow the dataset.field spelling too
-            aliases[ref.upper()] = ref.split(".")[1]
+            aliases[ref.upper()] = self.field_ref(ref)[1].name
         out = []
         for item in q.order_by:
             name, _, direction = item.partition(" ")
@@ -314,16 +333,19 @@ class Planner:
         return exp.Final(this=table) if info and info.dedup else table
 
     def _dict_get(self, node: exp.Expression, dict_keys: dict[str, exp.Expression]):
-        """dataset.column on a dictionary dataset -> dictGetOrNull('db.dict', 'column', key)."""
+        """dataset.column on a dictionary dataset -> dictGetOrNull('db.dict', 'column', key).
+
+        The key column is not an attribute, so dictGet* cannot read it: emit the
+        key itself, NULL when the dictionary lacks it, as a LEFT JOIN would."""
         if isinstance(node, exp.Column) and node.table in dict_keys:
             ds = self.dataset(node.table)
+            name = exp.Literal.string(source_table(ds.source).sql())
+            key = dict_keys[node.table].copy()
+            if node.name.upper() == (self.catalog[ds.name].dictionary_key or "").upper():
+                has = exp.Anonymous(this="dictHas", expressions=[name, key])
+                return exp.If(this=has, true=key.copy(), false=exp.Null())
             return exp.Anonymous(
-                this="dictGetOrNull",
-                expressions=[
-                    exp.Literal.string(source_table(ds.source).sql()),
-                    exp.Literal.string(node.name),
-                    dict_keys[node.table].copy(),
-                ],
+                this="dictGetOrNull", expressions=[name, exp.Literal.string(node.name), key]
             )
         return node
 

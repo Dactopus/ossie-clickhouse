@@ -54,6 +54,18 @@ def test_describe_dataset_metric_field_and_unknown():
     assert "similar" in describe(MODEL, "sales")["error"]
 
 
+def test_describe_shows_the_expression_the_planner_runs():
+    data = MODEL.model_dump(by_alias=True)
+    metric = next(m for m in data["metrics"] if m["name"] == "total_sales")
+    metric["expression"]["dialects"].insert(
+        0, {"dialect": "SNOWFLAKE", "expression": "SUM(store_sales.ss_ext_sales_price):snow"}
+    )
+    from ossie import OssieDocument
+
+    m = describe(OssieDocument.model_validate(data), "total_sales")
+    assert m["expression"] == "SUM(store_sales.ss_ext_sales_price)"
+
+
 # --- through the protocol, against ClickHouse ---------------------------------
 
 

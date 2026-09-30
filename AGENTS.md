@@ -109,8 +109,8 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 
 ## Known ClickHouse traits to handle
 
-- Float division by zero and single-row `STDDEV`/`VARIANCE` yield `nan`,
-  not `NULL`.
+- Float division by zero and single-row `STDDEV`/`VARIANCE` yield `inf` or
+  `nan`, not `NULL`; the executor maps both to `None`.
 - No `TO_DATE`, `SPLIT_PART`, `CONTAINS`, `IFF`, `ZEROIFNULL` and similar;
   each has a ClickHouse equivalent in the mapping table.
 - `EXTRACT(DAYOFWEEK | DAYOFYEAR ...)` is not accepted; use `toDayOfWeek`
