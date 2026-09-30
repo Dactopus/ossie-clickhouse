@@ -65,7 +65,7 @@ class Executor:
         """ClickHouse lists in system.tables and system.columns only what the
         connected user may read, so anything the model names and the catalog
         lacks is invisible to this user."""
-        datasets, fields = set(), set()
+        datasets, fields, relationships = set(), set(), set()
         for ds in self.full_model.datasets:
             info = self.catalog.get(ds.name)
             if info is None:
@@ -75,7 +75,14 @@ class Executor:
                 cols = {c.name for c in parse(pick_expression(f.expression)).find_all(exp.Column)}
                 if not cols <= info.columns:
                     fields.add(f"{ds.name}.{f.name}")
-        return Hidden(frozenset(datasets), frozenset(fields))
+        for r in self.full_model.relationships or []:
+            for ds_name, cols in ((r.from_dataset, r.from_columns), (r.to, r.to_columns)):
+                info = self.catalog.get(ds_name)
+                if info and not set(cols) <= info.columns:
+                    relationships.add(r.name)
+        return Hidden(
+            frozenset(datasets), frozenset(fields), relationships=frozenset(relationships)
+        )
 
     # --- introspection ------------------------------------------------------
 
@@ -91,20 +98,24 @@ class Executor:
             tables.setdefault((t.db or self.client.database or "default", t.name), []).append(ds)
         if not tables:
             return {}
-        pairs = ", ".join(f"('{db}', '{name}')" for db, name in tables)
+        params = {"pairs": list(tables)}  # bound server-side: names never enter SQL text
+        pairs = "{pairs:Array(Tuple(String, String))}"
         rows = self.client.query(
             "SELECT database, name, engine, engine_full FROM system.tables "
-            f"WHERE (database, name) IN ({pairs})"
+            f"WHERE (database, name) IN {pairs}",
+            parameters=params,
         ).result_rows
         cols = self.client.query(
             "SELECT database, table, groupArray(name) FROM system.columns "
-            f"WHERE (database, table) IN ({pairs}) GROUP BY database, table"
+            f"WHERE (database, table) IN {pairs} GROUP BY database, table",
+            parameters=params,
         ).result_rows
         columns = {(db, t): frozenset(c) for db, t, c in cols}
         try:
             dicts = self.client.query(
                 "SELECT database, name, attribute.names FROM system.dictionaries "
-                f"WHERE (database, name) IN ({pairs})"
+                f"WHERE (database, name) IN {pairs}",
+                parameters=params,
             ).result_rows
         except Exception:  # needs an explicit grant; without it dictionaries are joined as tables
             dicts = []
@@ -168,9 +179,10 @@ class Executor:
     def execute(self, q: Query) -> Result:
         sql = self.planner.sql(q)
         res = self.client.query(sql)
-        rows = [tuple(_nan_to_none(v) for v in row) for row in res.result_rows]
+        rows = [tuple(_non_finite_to_none(v) for v in row) for row in res.result_rows]
         return Result(list(res.column_names), rows, sql)
 
 
-def _nan_to_none(v):
-    return None if isinstance(v, float) and math.isnan(v) else v
+def _non_finite_to_none(v):
+    """ClickHouse yields nan and inf where SQL yields NULL; neither is JSON."""
+    return None if isinstance(v, float) and not math.isfinite(v) else v

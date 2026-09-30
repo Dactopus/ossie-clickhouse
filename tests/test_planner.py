@@ -80,6 +80,9 @@ def test_order_by():
         order_by=("item.i_brand", "TOTAL_SALES"),
     )
     assert "ORDER BY i_brand ASC NULLS FIRST, total_sales ASC NULLS FIRST" in P.sql(q)
+    # The caller's spelling of dataset.field never leaks into ORDER BY: aliases are the model's.
+    q = Query(dimensions=("date_dim.D_YEAR",), order_by=("DATE_DIM.D_YEAR",))
+    assert "AS d_year" in P.sql(q) and "ORDER BY d_year ASC" in P.sql(q)
     with pytest.raises(
         PlanError, match="not a selected metric or dimension \\(did you mean: total_sales"
     ):
@@ -200,18 +203,58 @@ def test_filter_on_unselected_metric_adds_its_join():
     )
 
 
-def test_join_requires_unique_key_on_target():
+def _variant(mutate) -> Planner:
+    """A planner over a copy of the fixture model changed by ``mutate(data)``."""
     import copy
 
-    m = copy.deepcopy(MODEL.model_dump(by_alias=True))
-    item = next(d for d in m["datasets"] if d["name"] == "item")
-    item["primary_key"] = ["i_item_id"]
-    item["unique_keys"] = None
     from ossie import OssieDocument
 
-    p = Planner(OssieDocument.model_validate(m))
+    m = copy.deepcopy(MODEL.model_dump(by_alias=True))
+    mutate(m)
+    return Planner(OssieDocument.model_validate(m))
+
+
+def test_join_requires_unique_key_on_target():
+    def mutate(m):
+        item = next(d for d in m["datasets"] if d["name"] == "item")
+        item["primary_key"] = ["i_item_id"]
+        item["unique_keys"] = None
+
     with pytest.raises(PlanError, match="not many-to-one"):
-        p.sql(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+        _variant(mutate).sql(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+
+
+def test_anonymous_aggregate_filter_goes_to_having():
+    # APPROX_PERCENTILE has no SQLGlot node; it must still count as an aggregate.
+    sql = P.sql(
+        Query(
+            metrics=("total_sales",),
+            dimensions=("item.i_brand",),
+            filters=("APPROX_PERCENTILE(store_sales.ss_net_profit, 0.95) > 10",),
+        )
+    )
+    assert "WHERE" not in sql
+    assert "HAVING quantileTDigest(0.95)(store_sales.ss_net_profit) > 10" in sql
+
+
+def test_selected_names_must_differ():
+    with pytest.raises(PlanError, match="two selected columns named 'total_sales'"):
+        P.sql(Query(metrics=("total_sales", "TOTAL_SALES")))
+
+    def mutate(m):
+        next(x for x in m["metrics"] if x["name"] == "total_sales")["name"] = "I_BRAND"
+
+    with pytest.raises(PlanError, match="two selected columns named 'I_BRAND'"):
+        _variant(mutate).sql(Query(metrics=("i_brand",), dimensions=("item.i_brand",)))
+
+
+def test_two_relationships_to_the_same_dataset_are_ambiguous():
+    def mutate(m):
+        sold = next(r for r in m["relationships"] if r["name"] == "store_sales_to_date")
+        m["relationships"].append(sold | {"name": "store_sales_to_ship_date"})
+
+    with pytest.raises(PlanError, match=r"ambiguous join .* 'store_sales_to_ship_date'"):
+        _variant(mutate).sql(Query(metrics=("total_sales",), dimensions=("date_dim.d_year",)))
 
 
 def test_cli(capsys):

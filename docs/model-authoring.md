@@ -55,7 +55,8 @@ ClickHouse lacks (`DATEADD`, `DATEDIFF`, `DATE_PART`, `SPLIT_PART`,
 tree; `EXTRACT(DAYOFWEEK ...)` and `DAYOFYEAR` become `toDayOfWeek` and
 `toDayOfYear`. Where ClickHouse disagrees with the spec, the spec wins:
 `REGEXP_REPLACE` replaces every match, `DAYOFWEEK` is ISO (Monday is 1),
-float division by zero and a one-row `STDDEV` come back as NULL, not NaN.
+float division by zero and a one-row `STDDEV` come back as NULL, not
+`inf` or `nan`.
 Subqueries and statements inside an expression are rejected.
 
 Window functions over aggregates (`RANK() OVER (...)`, `LAG(SUM(x))`)
@@ -113,7 +114,9 @@ JSON. `dedup` is the only key today.
 A dataset whose source is a ClickHouse [dictionary](https://clickhouse.com/docs/sql-reference/dictionaries)
 with a single key, joined on that key, is read with
 [`dictGetOrNull`](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions) and the
-join disappears. This is learned from
+join disappears. The key column itself is not a dictionary attribute, so
+a field over it is read as the joining column, NULL when the dictionary
+has no such key, exactly as the join would answer. This is learned from
 [`system.dictionaries`](https://clickhouse.com/docs/operations/system-tables/dictionaries), which the connected user needs a grant
 to read; without it the dictionary is joined like a table, which is still
 correct, only slower.

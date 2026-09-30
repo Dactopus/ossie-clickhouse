@@ -43,3 +43,6 @@ metrics:
     expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders_raw.amount)}]}
   - name: spread
     expression: {dialects: [{dialect: ANSI_SQL, expression: STDDEV(orders.amount)}]}
+  - name: zero_ratio
+    description: Divides by a float zero; ClickHouse answers inf, not NULL.
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(orders.amount) / SUM(orders.amount * 0)}]}

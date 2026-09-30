@@ -20,6 +20,7 @@ from ossie import OssieDocument
 from ossie_clickhouse.access import Policy
 from ossie_clickhouse.executor import Executor, connect
 from ossie_clickhouse.planner import PlanError, Query
+from ossie_clickhouse.translate import pick_expression
 
 # --- pure views of a model, testable without a server ------------------------
 
@@ -103,7 +104,7 @@ def describe(model: OssieDocument, name: str) -> dict[str, Any]:
                 _edge(r) for r in model.relationships or [] if obj_name in (r.from_dataset, r.to)
             ]
         else:
-            out["expression"] = obj.expression.dialects[0].expression
+            out["expression"] = pick_expression(obj.expression)
             if obj.datatype:
                 out["datatype"] = obj.datatype.value
             if kind == "field" and obj.is_time_dimension():

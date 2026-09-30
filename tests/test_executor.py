@@ -58,9 +58,27 @@ def test_dictionary_read_with_dictget(ex):
     assert set(r.rows) == {(None, 30.0), ("France", 20.0), ("Germany", 15.0)}
 
 
-def test_nan_becomes_none(ex):
+def test_dictionary_key_column_is_the_join_key(ex):
+    # dictGet* cannot read the key; unknown keys are NULL as with a LEFT JOIN.
+    r = ex.execute(Query(metrics=("revenue",), dimensions=("country.code",)))
+    assert "dictGetOrNull('ossie_test.country', 'code'" not in r.sql
+    assert set(r.rows) == {(None, 30.0), ("FR", 20.0), ("DE", 15.0)}
+
+
+def test_nan_and_inf_become_none(ex):
     r = ex.execute(Query(metrics=("spread",), dimensions=("orders.order_id",), limit=1))
     assert r.rows[0][1] is None
+    assert ex.execute(Query(metrics=("zero_ratio",))).rows == [(None,)]
+
+
+def test_odd_source_names_do_not_break_introspection(ex, tmp_path):
+    p = tmp_path / "quoted.yaml"
+    text = FIXTURE.read_text().replace(
+        "source: ossie_test.country\n", "source: ossie_test.o'brien\\x\n"
+    )
+    p.write_text(text)
+    problems = Executor(ex.client, load_model(p)).check()
+    assert any('source "ossie_test.o\'brien\\\\x" not found' in x for x in problems)
 
 
 def test_check_reports_database_level_problems(ex, tmp_path):
