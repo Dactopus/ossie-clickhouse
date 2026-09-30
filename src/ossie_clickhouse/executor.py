@@ -25,8 +25,11 @@ VENDOR = "CLICKHOUSE"
 
 
 def connect(url: str | None = None):
+    # No session: nothing here needs one, and a session serializes queries, so
+    # concurrent MCP tool calls on one client would fail.
     return clickhouse_connect.get_client(
-        dsn=url or os.environ.get("OSSIE_CLICKHOUSE_URL", DEFAULT_URL)
+        dsn=url or os.environ.get("OSSIE_CLICKHOUSE_URL", DEFAULT_URL),
+        autogenerate_session_id=False,
     )
 
 

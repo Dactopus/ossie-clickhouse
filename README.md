@@ -83,6 +83,8 @@ print(r.sql, r.columns, r.rows[:3])
   [SQLGlot](https://github.com/tobymao/sqlglot) AST; the spec's function
   catalog is mapped to ClickHouse equivalents and checked by value against
   [DuckDB](https://duckdb.org) and the spec text.
+- Rows come sorted by the first metric, descending, unless `order_by` says
+  otherwise, so the top rows come first and nobody has to rank them by hand.
 - Names resolve case-insensitively; SQL uses the physical names as the
   model writes them. The same question and model always give the same SQL.
 - Errors name the nearest known metric, field or dataset, so an agent can

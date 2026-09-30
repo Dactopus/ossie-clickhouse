@@ -146,3 +146,21 @@ async def test_query_and_error(client):
     )
     assert not r.is_error and r.structured_content["error"].startswith("ClickHouse: ")
     assert "\n" not in r.structured_content["error"]
+
+
+@pytest.mark.anyio
+async def test_concurrent_queries_share_one_process(tpcds):
+    """Hosts issue tool calls in parallel and the SDK runs sync tools in threads:
+    one server must serve them all without ClickHouse session clashes."""
+    import asyncio
+
+    from mcp import Client
+
+    from ossie_clickhouse.executor import connect
+    from ossie_clickhouse.mcp_server import build_server
+
+    async with Client(build_server(MODEL, connect), raise_exceptions=True) as c:
+        calls = [c.call_tool("query", {"filters": ["sleep(0.3) = 0"], "metrics": ["total_sales"]})
+                 for _ in range(3)]  # fmt: skip
+        results = await asyncio.gather(*calls)
+    assert [r.structured_content.get("error") for r in results] == [None, None, None]

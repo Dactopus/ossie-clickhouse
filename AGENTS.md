@@ -155,4 +155,4 @@ package level only when a module outgrows one file.
 
 ## Repository status
 
-Phases 0 to 6 done (see [ROADMAP.md](ROADMAP.md)).
+Phases 0 to 7 done (see [ROADMAP.md](ROADMAP.md)); not yet public, no release tag.

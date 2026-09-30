@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
 
-from ossie_clickhouse.translate import _rewrite, parse, pick_expression
+from ossie_clickhouse.translate import parse, pick_expression, rewrite
 
 
 class PlanError(ValueError):
@@ -40,7 +40,10 @@ class Query:
     # Ossie expressions over dataset.field (WHERE) or over metric names and
     # aggregates (HAVING); window metrics cannot be filtered in one SELECT.
     filters: tuple[str, ...] = ()
-    order_by: tuple[str, ...] = ()  # metric or dimension names, "name desc" for descending
+    # Metric or dimension names, "name desc" for descending. Empty with metrics
+    # and dimensions: first metric descending, so callers that rank rows
+    # themselves (agents do, and get it wrong) see the top rows first.
+    order_by: tuple[str, ...] = ()
     limit: int | None = None
 
 
@@ -233,11 +236,11 @@ class Planner:
         where: list[exp.Expression] = []
         having: list[exp.Expression] = []  # filters over aggregates or metric names
         # Rewrite before inspecting: APPROX_PERCENTILE is a plain function name to
-        # SQLGlot and an aggregate only after _rewrite. _rewrite is idempotent, so
+        # SQLGlot and an aggregate only after rewrite. rewrite is idempotent, so
         # the final pass over the whole SELECT leaves these nodes as they are.
-        grouped = {e.transform(_rewrite).sql() for e in group}
+        grouped = {e.transform(rewrite).sql() for e in group}
         for f in q.filters:
-            tree = self.resolve(f, used, metrics=True).transform(_rewrite)
+            tree = self.resolve(f, used, metrics=True).transform(rewrite)
             if tree.find(exp.Window):
                 raise PlanError(
                     f"filter {f!r} uses a window function; a window metric cannot be "
@@ -290,8 +293,9 @@ class Planner:
             sel = sel.group_by(*group)
         if having:
             sel = sel.having(exp.and_(*having))
-        if q.order_by:
-            sel = sel.order_by(*self._order(q, selects))
+        order_by = q.order_by or ((f"{q.metrics[0]} desc",) if q.metrics and group else ())
+        if order_by:
+            sel = sel.order_by(*self._order(order_by, q, selects))
         if q.limit is not None:
             sel = sel.limit(q.limit)
         if dict_keys:
@@ -300,15 +304,17 @@ class Planner:
         sel.set(
             "settings", [exp.EQ(this=exp.var("join_use_nulls"), expression=exp.Literal.number(1))]
         )
-        return sel.transform(_rewrite)
+        return sel.transform(rewrite)
 
-    def _order(self, q: Query, selects: list[exp.Expression]) -> list[exp.Expression]:
+    def _order(
+        self, order_by: tuple[str, ...], q: Query, selects: list[exp.Expression]
+    ) -> list[exp.Expression]:
         """ORDER BY over selected aliases; names are metrics, dataset.field, or field names."""
         aliases = {e.alias.upper(): e.alias for e in selects}
         for ref in q.dimensions:  # allow the dataset.field spelling too
             aliases[ref.upper()] = self.field_ref(ref)[1].name
         out = []
-        for item in q.order_by:
+        for item in order_by:
             name, _, direction = item.partition(" ")
             desc = direction.strip().upper() == "DESC"
             if direction and not desc and direction.strip().upper() != "ASC":
