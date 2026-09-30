@@ -12,6 +12,7 @@ import re
 from collections.abc import Sequence
 
 import sqlglot
+import sqlglot.errors
 from ossie import OssieDialect, OssieExpression
 from sqlglot import exp
 from sqlglot.dialects.dialect import Dialect
@@ -65,8 +66,25 @@ class OssieSQL(Dialect):
     Parser = _OssieParser
 
 
+_DISALLOWED = (
+    exp.Select, exp.Subquery, exp.With, exp.Union, exp.Intersect, exp.Except, exp.Join,
+    exp.Create, exp.Drop, exp.Alter, exp.Insert, exp.Update, exp.Delete,
+    exp.Placeholder, exp.Parameter,
+)  # fmt: skip
+
+
 def parse(expression: str) -> exp.Expression:
-    return sqlglot.parse_one(expression, read=OssieSQL)
+    """Parse an Ossie expression, rejecting constructs the spec disallows."""
+    try:
+        tree = sqlglot.parse_one(expression, read=OssieSQL)
+    except sqlglot.errors.ParseError as e:
+        raise ValueError(f"cannot parse {expression!r}: {str(e).splitlines()[0]}") from e
+    for node in tree.walk():
+        if isinstance(node, _DISALLOWED):
+            raise ValueError(
+                f"{type(node).__name__} is not allowed in an Ossie expression: {expression!r}"
+            )
+    return tree
 
 
 # --- ClickHouse rewrites ----------------------------------------------------
