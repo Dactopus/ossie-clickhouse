@@ -12,6 +12,7 @@ from ossie_clickhouse import load_model
 from ossie_clickhouse.access import Hidden, Policy, restrict
 from ossie_clickhouse.executor import Executor
 from ossie_clickhouse.planner import PlanError, Query
+from tests.conftest import unavailable
 from tests.test_executor import FIXTURE, SETUP
 
 USERS = """
@@ -95,7 +96,7 @@ def admin(clickhouse):
         for stmt in filter(None, (s.strip() for s in USERS.split(";"))):
             clickhouse.command(stmt)
     except Exception as e:
-        pytest.skip(f"cannot create users here: {str(e)[:80]}")
+        unavailable(f"cannot create users here: {str(e)[:80]}")
     yield clickhouse
     clickhouse.command("DROP ROW POLICY IF EXISTS de_only ON ossie_test.orders")
     clickhouse.command("DROP DATABASE ossie_test")

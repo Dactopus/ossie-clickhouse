@@ -39,7 +39,9 @@ uv run pytest
 
 Tests against the [TPC-DS reference model](https://github.com/apache/ossie/blob/main/examples/tpcds_semantic_model.yaml)
 need the `tpcds` database with the five tables the model uses, and skip
-when it is absent (CI runs without it). [DuckDB](https://duckdb.org),
+when it is absent. CI loads it and sets `OSSIE_CLICKHOUSE_REQUIRED=1`, which
+turns every such skip into a failure, so nothing passes there by being
+skipped. [DuckDB](https://duckdb.org),
 already a dev dependency, generates the data at scale factor 1 with its
 [tpcds extension](https://duckdb.org/docs/stable/core_extensions/tpcds):
 

@@ -5,15 +5,20 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  OSSIE_CLICKHOUSE_REQUIRED: 1  # a missing server or database fails the run instead of skipping
+
 jobs:
   test:
     runs-on: ubuntu-latest
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:latest
+        image: clickhouse/clickhouse-server:26.9
         ports: ["8123:8123"]
         env:
           CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+        volumes:
+          - ${{ github.workspace }}/tpcds:/var/lib/clickhouse/user_files/tpcds
         options: >-
           --health-cmd "wget -qO- http://localhost:8123/ping || exit 1"
           --health-interval 5s --health-timeout 3s --health-retries 20
@@ -23,4 +28,16 @@ jobs:
       - run: uv sync
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
+      - name: Load the TPC-DS reference data (see CONTRIBUTING.md)
+        run: |
+          mkdir -p tpcds && sudo chmod a+rwx tpcds  # docker made the bind mount root-owned
+          uv run python -c "
+          import duckdb; c = duckdb.connect(); c.execute('INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=1)')
+          for t in ['store_sales', 'date_dim', 'customer', 'item', 'store']:
+              c.execute(f\"COPY {t} TO 'tpcds/{t}.parquet' (FORMAT PARQUET)\")"
+          chmod -R a+rX tpcds
+          curl -sf http://127.0.0.1:8123 --data-binary "CREATE DATABASE tpcds"
+          for t in store_sales date_dim customer item store; do
+            curl -sf http://127.0.0.1:8123 --data-binary "CREATE TABLE tpcds.$t ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM file('tpcds/$t.parquet', Parquet)"
+          done
       - run: uv run pytest -q
