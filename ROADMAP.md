@@ -106,19 +106,60 @@ suggestions; row policies change results; column grants hide fields and
 the relationships and metrics resting on them; the policy file hides a
 metric for a role and only that role.
 
-## Phase 6: MCP server
+## Phase 6: MCP server, local
+
+MCP (spec 2026-07-28) defines two transports: stdio for a subprocess the
+agent launches, Streamable HTTP for a remote server. The spec ties the
+access model to the transport: stdio servers take credentials from the
+environment and must not do OAuth; HTTP servers are OAuth 2.1 resource
+servers. This phase is the stdio half, which is what every desktop agent
+uses.
 
 - Optional extra `ossie-clickhouse[mcp]`; the core library imports without
   the MCP SDK.
-- Tools: list model, describe object with `ai_context`, run semantic query.
-- Caller identity passed through to access control, nothing else.
-- Thin adapter only: no logic that does not exist in the library API.
+- `ossie-clickhouse serve <model>` over stdio. ClickHouse credentials from
+  the environment; one process, one ClickHouse user, so Phase 5 applies as
+  is.
+- Tools: list the model (compact, with descriptions and synonyms), search
+  objects by name or synonym, describe one object with its `ai_context`,
+  run a semantic query. Models with hundreds of objects must not require
+  dumping everything into the agent's context.
+- Planner and executor errors are returned as tool results with their
+  "did you mean" suggestions, so an agent can correct itself in one turn.
+- One seam kept explicit: "who is calling" to "ClickHouse client" is a
+  single function, so Phase 6b can replace it without touching the tools.
+- Tests through the SDK's client against an in-process server; a manual
+  run from a desktop agent against TPC-DS.
+
+## Phase 6b: MCP server, remote (after the first release)
+
+Streamable HTTP with OAuth 2.1, built only when a real deployment asks for
+it. Design fixed now so Phase 6 does not paint us into a corner:
+
+- The server validates bearer tokens from the organization's identity
+  provider (Okta, Entra ID, Keycloak) through the SDK's token verifier;
+  the SDK serves the RFC 9728 metadata. The MCP token is never passed to
+  ClickHouse.
+- Caller identity to ClickHouse identity, two strategies behind the seam
+  from Phase 6:
+  - Token exchange: obtain a ClickHouse-audience JWT for the user and
+    connect with it. Works with ClickHouse Cloud JWT authentication
+    (Enterprise plan, 26.4+), where users and roles come from token claims,
+    and with self-hosted builds that verify JWTs (Altinity Antalya, or the
+    HTTP external authenticator with a JWT-verifying sidecar).
+  - Role switching: connect as a service user granted every role and
+    enable, per request, only the roles mapped from the token's groups.
+    Works with any ClickHouse; grants, row policies and the Phase 5
+    trimming all follow the active roles. The group-to-role mapping is the
+    one configuration a team writes.
+- Enterprise-Managed Authorization extension: support once clients carry
+  it; it changes how the token is obtained, not how it is verified.
 
 ## Phase 7: First public release
 
 - Packaging and publication to PyPI.
 - Documentation: installation, model authoring for ClickHouse, CLI, MCP
-  setup, access configuration.
+  setup with desktop agents, access control through ClickHouse.
 - Contribution guide.
 - Repository made public.
 
