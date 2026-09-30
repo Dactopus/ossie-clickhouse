@@ -98,8 +98,23 @@ local ClickHouse. See [spikes/phase0](spikes/phase0/README.md) for setup.
 - Table names are `database.table`; Ossie `source` may have three parts.
 - `clickhouse-connect` does not decode the `Time` type.
 
+## Development
+
+Python 3.11+, managed with uv. Layout: `src/ossie_clickhouse/` (library and
+CLI), `tests/` (pytest, fixtures in `tests/fixtures/`), `spikes/` (throwaway
+experiments, not part of the package), `docs/`.
+
+```bash
+uv sync                       # install with dev tools
+uv run pytest                 # tests
+uv run ruff check src tests   # lint
+uv run ruff format src tests  # format
+uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml
+```
+
+Every change to library code comes with a test. Keep modules flat; add a
+package level only when a module outgrows one file.
+
 ## Repository status
 
-Phase 0 done (see [ROADMAP.md](ROADMAP.md)). No library code or build
-tooling exists yet. When they do, add the install, test, and lint commands
-to this file.
+Phases 0 and 1 done (see [ROADMAP.md](ROADMAP.md)).
