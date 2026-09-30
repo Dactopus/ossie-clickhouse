@@ -7,6 +7,7 @@ import json
 import sys
 from decimal import Decimal
 
+from ossie_clickhouse.access import Policy
 from ossie_clickhouse.executor import Executor, connect
 from ossie_clickhouse.model import ModelError, load_model
 from ossie_clickhouse.planner import PlanError, Planner, Query
@@ -27,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("-f", "--filter", action="append", default=[], help="Ossie expression")
         s.add_argument("-l", "--limit", type=int)
         s.add_argument("--url", help="ClickHouse HTTP URL (default $OSSIE_CLICKHOUSE_URL)")
+        s.add_argument("--policy", help="YAML file hiding objects per ClickHouse user or role")
     sub.choices["query"].add_argument(
         "--json", action="store_true", help="JSON rows instead of TSV"
     )
@@ -39,7 +41,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "sql" and not args.url:
                 print(Planner(model).sql(q, pretty=True))
                 return 0
-            ex = Executor(connect(args.url), model)
+            policy = Policy.load(args.policy) if args.policy else None
+            ex = Executor(connect(args.url), model, policy)
             if args.command == "sql":
                 print(ex.planner.sql(q, pretty=True))
                 return 0

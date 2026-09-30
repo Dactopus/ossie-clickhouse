@@ -83,31 +83,28 @@ Tests create a `ReplacingMergeTree` fact table and a dictionary in a test
 database and check deduplicated sums, dictionary reads, the override, NaN
 handling, and database-level validation messages.
 
-## Phase 5: Access control
+## Phase 5: Access control (done)
 
-ClickHouse is the source of truth for who may see which data. Its users,
-roles, grants and row policies are already managed there, often through
-LDAP or SSO, and a separate list of roles in a local file would drift from
-it. So:
+Completed 2026-09-30. ClickHouse is the source of truth: the executor runs
+as whoever the client is connected as, so grants, column grants and row
+policies apply on their own. ClickHouse lists in `system.tables` and
+`system.columns` only what the connected user may read, so the catalog the
+executor already builds doubles as the visibility map: datasets whose
+source is absent and fields whose columns are absent are removed from the
+model, and relationships and metrics that depend on them go with them
+(`access.py`, `restrict()`). `system.dictionaries` needs an explicit grant;
+without it dictionaries are simply joined as tables. An optional policy
+file (`--policy`) hides datasets, fields or metrics per ClickHouse user or
+role, matched against `currentUser()` and `enabledRoles()`. Identity is the
+connection's credentials (`http://user:password@host:8123`); nothing here
+authenticates anyone. `validate --url` (`check()`) is a model owner's tool
+and should run with full read rights.
 
-- The executor runs each query as the ClickHouse user who is asking. Row
-  policies and column grants apply on their own.
-- The model shown to a caller is trimmed to what their ClickHouse user can
-  read: datasets whose source they cannot select from disappear, along with
-  the relationships and metrics that depend on them. Visibility comes from
-  `system.grants` and `system.role_grants`, checked once per user and
-  cached.
-- An optional local file adds restrictions the database cannot express:
-  hiding a metric or a field from a role even though its tables are
-  readable. Keyed by ClickHouse user or role name, never a parallel
-  identity.
-- A hidden object never appears in generated SQL, error messages or
-  "did you mean" suggestions.
-- Who the caller is comes from outside: the connection's credentials, an
-  MCP client configured per agent, or an identity passed by the MCP
-  transport (Phase 6). This project does not authenticate anyone.
-- The no-configuration case, one ClickHouse user for everyone, keeps
-  working with nothing to set up.
+Tests create restricted users, a role and a row policy and check: a
+dataset the user cannot read is absent from the model and from
+suggestions; row policies change results; column grants hide fields and
+the relationships and metrics resting on them; the policy file hides a
+metric for a role and only that role.
 
 ## Phase 6: MCP server
 
