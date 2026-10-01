@@ -15,6 +15,7 @@ from ossie_clickhouse.access import Policy
 from ossie_clickhouse.executor import Executor, connect
 from ossie_clickhouse.model import ModelError, load_model
 from ossie_clickhouse.planner import PlanError, Planner, Query
+from ossie_clickhouse.translate import untranslatable
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -110,15 +111,19 @@ def _run(args: argparse.Namespace) -> int:
 
     # validate
     doc = load_model(args.model)
+    fields, metrics = untranslatable(doc)
+    problems = [f"field {k}: {v}" for k, v in fields.items()]
+    problems += [f"metric {k!r}: {v}" for k, v in metrics.items()]
+    where = ""
     if args.url:
         ex = Executor(connect(args.url), doc)
-        problems = ex.check()
-        for p in problems:
-            print(f"error: {p}", file=sys.stderr)
-        if problems:
-            where = ex.client.url  # never args.url: it may carry the password
-            print(f"{args.model}: {len(problems)} problem(s) against {where}", file=sys.stderr)
-            return 1
+        problems += ex.check()
+        where = f" against {ex.client.url}"  # never args.url: it may carry the password
+    for p in problems:
+        print(f"error: {p}", file=sys.stderr)
+    if problems:
+        print(f"{args.model}: {len(problems)} problem(s){where}", file=sys.stderr)
+        return 1
     n_fields = sum(len(d.fields or []) for d in doc.datasets)
     print(
         f"{args.model}: ok ({doc.name}, version {doc.version}, "

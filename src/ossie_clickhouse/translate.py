@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 import sqlglot
 import sqlglot.errors
-from ossie import OssieDialect, OssieExpression
+from ossie import OssieDialect, OssieDocument, OssieExpression
 from sqlglot import exp
 from sqlglot.dialects.dialect import Dialect
 from sqlglot.helper import seq_get
@@ -268,3 +268,26 @@ def to_clickhouse(expression: str | exp.Expression) -> str:
 def translate(expression: OssieExpression) -> str:
     """ClickHouse SQL for a model field or metric expression."""
     return to_clickhouse(pick_expression(expression))
+
+
+def untranslatable(model: OssieDocument) -> tuple[dict[str, str], dict[str, str]]:
+    """Fields ("dataset.field") and metrics whose expression does not translate, with why.
+
+    The executor hides them: an expression that does not parse cannot be shown
+    to read only columns the user may see."""
+
+    def problem(expression: OssieExpression) -> str | None:
+        try:
+            translate(expression)
+        except ValueError as e:
+            return str(e)
+        return None
+
+    fields = {
+        f"{d.name}.{f.name}": p
+        for d in model.datasets
+        for f in d.fields or []
+        if (p := problem(f.expression))
+    }
+    metrics = {m.name: p for m in model.metrics or [] if (p := problem(m.expression))}
+    return fields, metrics

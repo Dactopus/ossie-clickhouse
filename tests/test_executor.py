@@ -129,3 +129,39 @@ def test_cli_query(ex, capsys):
     assert capsys.readouterr().out == "revenue\n65.0\n"
     assert main(["sql", str(FIXTURE), "-m", "revenue", "--url", ex.client.url]) == 0
     assert "FINAL" in capsys.readouterr().out
+
+
+def test_untranslatable_expressions_are_hidden_and_reported(ex, tmp_path, capsys):
+    # Snowflake's four-argument REGEXP_COUNT is outside the spec signature.
+    bad = "REGEXP_COUNT(country_code, 'e', 1, 'i')"
+    text = FIXTURE.read_text().replace(
+        "      - name: country_code\n",
+        f"      - name: e_count\n        expression: {{dialects: [{{dialect: ANSI_SQL, "
+        f'expression: "{bad}"}}]}}\n      - name: country_code\n',
+        1,
+    )
+    text = text.replace(
+        "metrics:\n",
+        "metrics:\n  - name: e_total\n    expression: {dialects: [{dialect: ANSI_SQL, "
+        "expression: SUM(orders.e_count)}]}\n  - name: bad_total\n    expression: "
+        f'{{dialects: [{{dialect: ANSI_SQL, expression: "SUM({bad})"}}]}}\n',
+        1,
+    )
+    p = tmp_path / "untranslatable.yaml"
+    p.write_text(text)
+    other = Executor(ex.client, load_model(p))
+    # the rest of the model still answers
+    assert other.execute(Query(("revenue",))).rows == [(65.0,)]
+    assert other.check() == []
+    # the field, a metric over it and the bad metric are gone, like hidden objects
+    with pytest.raises(PlanError, match="unknown field"):
+        other.planner.sql(Query(("revenue",), ("orders.e_count",)))
+    for name in ("e_total", "bad_total"):
+        with pytest.raises(PlanError, match="unknown metric"):
+            other.planner.sql(Query((name,)))
+    # validate names each one, with or without a server
+    for args in (["validate", str(p)], ["validate", str(p), "--url", ex.client.url]):
+        assert main(args) == 1
+        err = capsys.readouterr().err
+        assert "field orders.e_count: expected REGEXP_COUNT(str, pattern), got 4" in err
+        assert "metric 'bad_total': expected REGEXP_COUNT(str, pattern), got 4" in err
