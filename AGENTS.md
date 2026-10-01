@@ -123,6 +123,8 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   reaches `p`).
 - Function rewrites live in `translate.py` and work on the SQLGlot AST,
   never on SQL text.
+- A rewritten function gets its spec signature in `_SIGNATURES`; `parse()`
+  rejects other argument counts, so a rewrite never drops an argument.
 - `clickhouse-connect` does not decode the `Time` type.
 
 ## Development

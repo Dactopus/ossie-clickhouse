@@ -36,26 +36,40 @@ def pick_expression(expression: OssieExpression) -> str:
 # --- parsing ----------------------------------------------------------------
 
 
-def _date_delta(cls):
+def _date_delta(cls, signature: str):
     """Spec puts the date part first: DATEADD(day, 7, d), DATEDIFF(day, d1, d2)."""
 
     def build(args: Sequence[exp.Expression]) -> exp.Expression:
+        if len(args) != 3:
+            raise sqlglot.errors.ParseError(f"expected {signature}, got {len(args)} argument(s)")
         return cls(this=seq_get(args, 2), expression=seq_get(args, 1), unit=seq_get(args, 0))
 
     return build
 
 
+# Spec: supported date parts for EXTRACT and DATE_PART.
+_DATE_PARTS = {
+    "YEAR", "QUARTER", "MONTH", "WEEK", "DAY", "DAYOFWEEK", "DAYOFYEAR",
+    "HOUR", "MINUTE", "SECOND", "MILLISECOND",
+}  # fmt: skip
+
+
 def _date_part(args: Sequence[exp.Expression]) -> exp.Expression:
     """DATE_PART('year', d) is EXTRACT(YEAR FROM d)."""
     part = seq_get(args, 0)
+    if part.name.upper() not in _DATE_PARTS:
+        raise sqlglot.errors.ParseError(
+            f"DATE_PART: {part.sql()} is not a date part; expected one of "
+            + ", ".join(sorted(_DATE_PARTS))
+        )
     return exp.Extract(this=exp.var(part.name.upper()), expression=seq_get(args, 1))
 
 
 class _OssieParser(Parser):
     FUNCTIONS = {
         **Parser.FUNCTIONS,
-        "DATEADD": _date_delta(exp.DateAdd),
-        "DATEDIFF": _date_delta(exp.DateDiff),
+        "DATEADD": _date_delta(exp.DateAdd, "DATEADD(part, amount, date_expr)"),
+        "DATEDIFF": _date_delta(exp.DateDiff, "DATEDIFF(part, start_date, end_date)"),
         "DATE_PART": _date_part,
     }
 
@@ -75,6 +89,45 @@ _DISALLOWED = (
 )  # fmt: skip
 
 
+# Spec signatures of the functions rewritten below. The default dialect also
+# parses other engines' longer forms, such as Snowflake's
+# REGEXP_COUNT(str, pattern, position, flags); a rewrite would drop the extra
+# arguments and return a different value, so parse() rejects them.
+_SIGNATURES = {
+    "APPROX_PERCENTILE": ("APPROX_PERCENTILE(expr, p)", 2, 2),
+    "TO_DATE": ("TO_DATE(string[, format])", 1, 2),
+    "TO_TIMESTAMP": ("TO_TIMESTAMP(string[, format])", 1, 2),
+    "IFF": ("IFF(condition, true_result, false_result)", 3, 3),
+    "ZEROIFNULL": ("ZEROIFNULL(expr)", 1, 1),
+    "NULLIFZERO": ("NULLIFZERO(expr)", 1, 1),
+    exp.PercentileCont: ("PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
+    exp.PercentileDisc: ("PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
+    exp.CurrentTime: ("CURRENT_TIME()", 0, 0),
+    exp.ToChar: ("TO_CHAR(date_expr, format)", 2, 2),
+    exp.SplitPart: ("SPLIT_PART(str, delimiter, part)", 3, 3),
+    exp.RegexpCount: ("REGEXP_COUNT(str, pattern)", 2, 2),
+    exp.Contains: ("CONTAINS(str, substr)", 2, 2),
+}
+
+
+def _argument_problem(node: exp.Expression) -> str | None:
+    if isinstance(node, exp.WithinGroup) and isinstance(
+        node.this, exp.PercentileCont | exp.PercentileDisc
+    ):
+        keys = len(node.expression.expressions)
+        if keys != 1:
+            return f"expected {_SIGNATURES[type(node.this)][0]}, got {keys} ORDER BY keys"
+    if isinstance(node, exp.Anonymous):
+        key, n = node.name.upper(), len(node.expressions)
+    else:
+        key, n = type(node), sum(v is not None for v in node.args.values())
+    if key in _SIGNATURES:
+        signature, low, high = _SIGNATURES[key]
+        if not low <= n <= high:
+            return f"expected {signature}, got {n} argument(s)"
+    return None
+
+
 def parse(expression: str) -> exp.Expression:
     """Parse an Ossie expression, rejecting constructs the spec disallows."""
     try:
@@ -86,6 +139,8 @@ def parse(expression: str) -> exp.Expression:
             raise ValueError(
                 f"{type(node).__name__} is not allowed in an Ossie expression: {expression!r}"
             )
+        if problem := _argument_problem(node):
+            raise ValueError(f"{problem}: {expression!r}")
     return tree
 
 
