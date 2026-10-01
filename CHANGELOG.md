@@ -15,6 +15,10 @@ a minor release may change the Python API.
   arguments and return a different value; they are now rejected with the
   expected signature. Too few arguments give the same error instead of an
   `IndexError`, and `DATE_PART` accepts only the spec's date parts.
+- One field or metric whose expression does not translate no longer stops
+  the whole model. It is hidden like an object the user may not read,
+  everything that depends on it goes with it, and `validate` names each
+  one, with or without `--url`.
 
 ## [0.1.0] - 2026-09-30
 

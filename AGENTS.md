@@ -77,6 +77,9 @@ Python library with a CLI entry point. The parts that constrain code:
   read, as revealed by `system.tables` and `system.columns`. A hidden object
   must never appear in SQL, errors or suggestions. The optional policy file
   only hides more; it never grants. Nothing in this project authenticates.
+  A field or metric whose expression does not translate is hidden the same
+  way (nothing proves it reads only visible columns) and reported by
+  `validate`.
 - ClickHouse specifics come from introspecting `system.tables`,
   `system.columns` and `system.dictionaries`, not from asking the user.
   `Replacing*` engines are read with `FINAL` (measured faster than `argMax`);

@@ -18,7 +18,7 @@ from sqlglot import exp
 
 from ossie_clickhouse.access import Hidden, Policy, restrict
 from ossie_clickhouse.planner import Catalog, PlanError, Planner, Query, TableInfo, source_table
-from ossie_clickhouse.translate import parse, pick_expression
+from ossie_clickhouse.translate import parse, pick_expression, untranslatable
 
 DEFAULT_URL = "http://127.0.0.1:8123"
 VENDOR = "CLICKHOUSE"
@@ -54,11 +54,15 @@ class Executor:
     def __init__(self, client, model: OssieDocument, policy: Policy | None = None):
         self.client = client
         self.full_model = model
+        self.untranslatable_fields, untranslatable_metrics = untranslatable(model)
         self.catalog = self.introspect()
         self.user, self.roles = self.client.query(
             "SELECT currentUser(), enabledRoles()"
         ).result_rows[0]
-        hidden = self._hidden_by_grants()
+        hidden = self._hidden_by_grants() | Hidden(
+            fields=frozenset(self.untranslatable_fields),
+            metrics=frozenset(untranslatable_metrics),
+        )
         if policy:
             hidden |= policy.hidden_for(self.user, list(self.roles))
         self.model = restrict(model, hidden)
@@ -75,6 +79,8 @@ class Executor:
                 datasets.add(ds.name)
                 continue
             for f in ds.fields or []:
+                if f"{ds.name}.{f.name}" in self.untranslatable_fields:
+                    continue  # hidden anyway
                 cols = {c.name for c in parse(pick_expression(f.expression)).find_all(exp.Column)}
                 if not cols <= info.columns:
                     fields.add(f"{ds.name}.{f.name}")
@@ -159,6 +165,8 @@ class Executor:
             for key in [ds.primary_key or [], *(ds.unique_keys or [])]:
                 needed.update({c: "key" for c in key})
             for f in ds.fields or []:
+                if f"{ds.name}.{f.name}" in self.untranslatable_fields:
+                    continue  # reported by untranslatable()
                 for c in parse(pick_expression(f.expression)).find_all(exp.Column):
                     if not c.table:
                         needed[c.name] = f"field {f.name!r}"
