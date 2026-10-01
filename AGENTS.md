@@ -161,3 +161,5 @@ package level only when a module outgrows one file.
 ## Repository status
 
 Version 0.1.0 is the first release (see [CHANGELOG.md](CHANGELOG.md)); installed from git until `apache-ossie` reaches PyPI. Decisions with their evidence are in [docs/design.md](docs/design.md).
+Pull requests are merged with rebase; releases follow
+[CONTRIBUTING.md](CONTRIBUTING.md#releasing).
