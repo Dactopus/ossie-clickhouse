@@ -1,0 +1,219 @@
+sqlglot 30.21.0
+apache-ossie-sql 0.1.0 from https://github.com/apache/ossie.git @ 5ddda4618ef061e35adae680db279d38b44324f3
+clickhouse 26.9.5.2
+corpus 143 catalog, 39 model expressions
+
+=== 1. ClickHouse SQL per dialect, executed (only rows where something differs)
+  [catalog] STDDEV_SAMP(x)
+      default   ok         STDDEV_SAMP(x)
+      ossie     ok         STDDEV_SAMP(x)
+      snowflake ok         stddevSamp(x)
+  [catalog] PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)
+      default   generator  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x NULLS FIRST)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x NULLS
+      ossie     generator  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x NULLS FIRST)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x NULLS
+      snowflake generator  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x) FROM
+  [catalog] PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)
+      default   generator  PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x NULLS FIRST)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x NULLS
+      ossie     generator  PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x NULLS FIRST)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x NULLS
+      snowflake generator  PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 42 (() (line 1, col 42): (ORDER BY x) FROM
+  [catalog] APPROX_PERCENTILE(x, 0.5)
+      default   unknown    APPROX_PERCENTILE(x, 0.5)
+                          !! Code: 46. DB::Exception: Function with name `APPROX_PERCENTILE` does not exist. In scope SELECT APPR
+      ossie     generator  APPROX_QUANTILE(x, 0.5)
+                          !! Code: 46. DB::Exception: Function with name `APPROX_QUANTILE` does not exist. In scope SELECT APPROX
+      snowflake generator  APPROX_QUANTILE(x, 0.5)
+                          !! Code: 46. DB::Exception: Function with name `APPROX_QUANTILE` does not exist. In scope SELECT APPROX
+  [catalog] CURRENT_TIME
+      default   generator  CURRENT_TIME()
+                          !! Code: 46. DB::Exception: Function with name `CURRENT_TIME` does not exist. Maybe you meant: ['curren
+      ossie     generator  CURRENT_TIME()
+                          !! Code: 46. DB::Exception: Function with name `CURRENT_TIME` does not exist. Maybe you meant: ['curren
+      snowflake ok         LOCALTIME
+  [catalog] CURRENT_TIME()
+      default   generator  CURRENT_TIME()
+                          !! Code: 46. DB::Exception: Function with name `CURRENT_TIME` does not exist. Maybe you meant: ['curren
+      ossie     generator  CURRENT_TIME()
+                          !! Code: 46. DB::Exception: Function with name `CURRENT_TIME` does not exist. Maybe you meant: ['curren
+      snowflake ok         LOCALTIME
+  [catalog] DAYOFYEAR(d)
+      default   generator  DAY_OF_YEAR(d)
+                          !! Code: 46. DB::Exception: Function with name `DAY_OF_YEAR` does not exist. Maybe you meant: ['DAYOFYE
+      ossie     generator  DAY_OF_YEAR(d)
+                          !! Code: 46. DB::Exception: Function with name `DAY_OF_YEAR` does not exist. Maybe you meant: ['DAYOFYE
+      snowflake generator  DAY_OF_YEAR(d)
+                          !! Code: 46. DB::Exception: Function with name `DAY_OF_YEAR` does not exist. Maybe you meant: ['DAYOFYE
+  [catalog] EXTRACT(DAYOFWEEK FROM d)
+      default   generator  EXTRACT(DAYOFWEEK FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2
+      ossie     generator  EXTRACT(DAYOFWEEK FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2
+      snowflake generator  EXTRACT(DAYOFWEEK FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2
+  [catalog] EXTRACT(DAYOFYEAR FROM d)
+      default   generator  EXTRACT(DAYOFYEAR FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2
+      ossie     generator  EXTRACT(DAYOFYEAR FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2
+      snowflake generator  EXTRACT(DAYOFYEAR FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 31 (d) (line 1, col 31): d) FROM (SELECT 2
+  [catalog] DATE_PART('year', d)
+      default   ok         DATE_PART('year', d)
+      ossie     ok         EXTRACT(YEAR FROM d)
+      snowflake generator  EXTRACT('year' FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 28 (d) (line 1, col 28): d) FROM (SELECT 2
+  [catalog] DATE_PART('month', d)
+      default   ok         DATE_PART('month', d)
+      ossie     ok         EXTRACT(MONTH FROM d)
+      snowflake generator  EXTRACT('month' FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 29 (d) (line 1, col 29): d) FROM (SELECT 2
+  [catalog] DATE_PART('day', d)
+      default   ok         DATE_PART('day', d)
+      ossie     ok         EXTRACT(DAY FROM d)
+      snowflake generator  EXTRACT('day' FROM d)
+                          !! Code: 62. DB::Exception: Syntax error: failed at position 27 (d) (line 1, col 27): d) FROM (SELECT 2
+  [catalog] DATEADD(day, 7, d)
+      default   ok         DATEADD(day, 7, d)
+      ossie     ok         DATE_ADD(DAY, 7, d)
+      snowflake ok         DATE_ADD(DAY, 7, d)
+  [catalog] DATEADD(month, -1, d)
+      default   ok         DATEADD(month, -1, d)
+      ossie     ok         DATE_ADD(MONTH, -1, d)
+      snowflake ok         DATE_ADD(MONTH, -1, d)
+  [catalog] DATEADD(year, 1, d)
+      default   ok         DATEADD(year, 1, d)
+      ossie     ok         DATE_ADD(YEAR, 1, d)
+      snowflake ok         DATE_ADD(YEAR, 1, d)
+  [catalog] DATEDIFF(day, d, d2)
+      default   parser     DATE_DIFF(D2, d, day)
+                          !! Code: 47. DB::Exception: Unknown expression or function identifier `D2`. Maybe you meant: ['d2']. In
+      ossie     ok         DATE_DIFF(DAY, d, d2)
+      snowflake ok         DATE_DIFF(DAY, d, d2)
+  [catalog] DATEDIFF(month, d, d2)
+      default   parser     DATE_DIFF(D2, d, month)
+                          !! Code: 47. DB::Exception: Unknown expression or function identifier `D2`. Maybe you meant: ['d2']. In
+      ossie     ok         DATE_DIFF(MONTH, d, d2)
+      snowflake ok         DATE_DIFF(MONTH, d, d2)
+  [catalog] DATEDIFF(year, d, d2)
+      default   parser     DATE_DIFF(D2, d, year)
+                          !! Code: 47. DB::Exception: Unknown expression or function identifier `D2`. Maybe you meant: ['d2']. In
+      ossie     ok         DATE_DIFF(YEAR, d, d2)
+      snowflake ok         DATE_DIFF(YEAR, d, d2)
+  [catalog] TO_DATE('2024-01-15')
+      default   unknown    TO_DATE('2024-01-15')
+                          !! Code: 46. DB::Exception: Function with name `TO_DATE` does not exist. Maybe you meant: ['toDate','TO
+      ossie     unknown    TO_DATE('2024-01-15')
+                          !! Code: 46. DB::Exception: Function with name `TO_DATE` does not exist. Maybe you meant: ['toDate','TO
+      snowflake ok         CAST('2024-01-15' AS Nullable(DATE))
+  [catalog] TO_TIMESTAMP('2024-01-15 10:30:00')
+      default   unknown    TO_TIMESTAMP('2024-01-15 10:30:00')
+                          !! Code: 46. DB::Exception: Function with name `TO_TIMESTAMP` does not exist. Maybe you meant: ['UTC_ti
+      ossie     unknown    TO_TIMESTAMP('2024-01-15 10:30:00')
+                          !! Code: 46. DB::Exception: Function with name `TO_TIMESTAMP` does not exist. Maybe you meant: ['UTC_ti
+      snowflake ok         CAST('2024-01-15 10:30:00' AS Nullable(DateTime))
+  [catalog] TO_DATE('15/01/2024', 'DD/MM/YYYY')
+      default   unknown    TO_DATE('15/01/2024', 'DD/MM/YYYY')
+                          !! Code: 46. DB::Exception: Function with name `TO_DATE` does not exist. Maybe you meant: ['toDate','TO
+      ossie     unknown    TO_DATE('15/01/2024', 'DD/MM/YYYY')
+                          !! Code: 46. DB::Exception: Function with name `TO_DATE` does not exist. Maybe you meant: ['toDate','TO
+      snowflake generator  CAST(STR_TO_TIME('15/01/2024', '%d/%m/%Y') AS Nullable(DATE))
+                          !! Code: 46. DB::Exception: Function with name `STR_TO_TIME` does not exist. Maybe you meant: ['str_to_
+  [catalog] TO_CHAR(d, 'YYYY-MM-DD')
+      default   generator  CAST(d AS Nullable(String))
+                          !! dropped by SQLGlot: Argument 'format' is not supported for expression 'ToChar' when targeting ClickH
+      ossie     generator  CAST(d AS Nullable(String))
+                          !! dropped by SQLGlot: Argument 'format' is not supported for expression 'ToChar' when targeting ClickH
+      snowflake generator  CAST(d AS Nullable(String))
+                          !! dropped by SQLGlot: Argument 'format' is not supported for expression 'ToChar' when targeting ClickH
+  [catalog] LENGTH(s)
+      default   ok         CHAR_LENGTH(s)
+      ossie     ok         CHAR_LENGTH(s)
+      snowflake ok         LENGTH(s)
+  [catalog] SPLIT_PART(s, '-', 1)
+      default   generator  SPLIT_PART(s, '-', 1)
+                          !! Code: 46. DB::Exception: Function with name `SPLIT_PART` does not exist. In scope SELECT SPLIT_PART(
+      ossie     generator  SPLIT_PART(s, '-', 1)
+                          !! Code: 46. DB::Exception: Function with name `SPLIT_PART` does not exist. In scope SELECT SPLIT_PART(
+      snowflake generator  SPLIT_PART(s, '-', 1)
+                          !! Code: 46. DB::Exception: Function with name `SPLIT_PART` does not exist. In scope SELECT SPLIT_PART(
+  [catalog] CONTAINS(s, 'a')
+      default   generator  CONTAINS(s, 'a')
+                          !! Code: 46. DB::Exception: Function with name `CONTAINS` does not exist. In scope SELECT CONTAINS(s, '
+      ossie     generator  CONTAINS(s, 'a')
+                          !! Code: 46. DB::Exception: Function with name `CONTAINS` does not exist. In scope SELECT CONTAINS(s, '
+      snowflake generator  CONTAINS(s, 'a')
+                          !! Code: 46. DB::Exception: Function with name `CONTAINS` does not exist. In scope SELECT CONTAINS(s, '
+  [catalog] REGEXP_COUNT(s, 'a')
+      default   generator  REGEXP_COUNT(s, 'a')
+                          !! Code: 46. DB::Exception: Function with name `REGEXP_COUNT` does not exist. Maybe you meant: ['regr_c
+      ossie     generator  REGEXP_COUNT(s, 'a')
+                          !! Code: 46. DB::Exception: Function with name `REGEXP_COUNT` does not exist. Maybe you meant: ['regr_c
+      snowflake generator  REGEXP_COUNT(s, 'a')
+                          !! Code: 46. DB::Exception: Function with name `REGEXP_COUNT` does not exist. Maybe you meant: ['regr_c
+  [catalog] IFF(x > 1, 1, 0)
+      default   unknown    IFF(x > 1, 1, 0)
+                          !! Code: 46. DB::Exception: Function with name `IFF` does not exist. Maybe you meant: ['if']. In scope 
+      ossie     unknown    IFF(x > 1, 1, 0)
+                          !! Code: 46. DB::Exception: Function with name `IFF` does not exist. Maybe you meant: ['if']. In scope 
+      snowflake ok         CASE WHEN x > 1 THEN 1 ELSE 0 END
+  [catalog] ZEROIFNULL(x)
+      default   unknown    ZEROIFNULL(x)
+                          !! Code: 46. DB::Exception: Function with name `ZEROIFNULL` does not exist. Maybe you meant: ['isZeroOr
+      ossie     unknown    ZEROIFNULL(x)
+                          !! Code: 46. DB::Exception: Function with name `ZEROIFNULL` does not exist. Maybe you meant: ['isZeroOr
+      snowflake ok         CASE WHEN x IS NULL THEN 0 ELSE x END
+  [catalog] NULLIFZERO(x)
+      default   unknown    NULLIFZERO(x)
+                          !! Code: 46. DB::Exception: Function with name `NULLIFZERO` does not exist. In scope SELECT NULLIFZERO(
+      ossie     unknown    NULLIFZERO(x)
+                          !! Code: 46. DB::Exception: Function with name `NULLIFZERO` does not exist. In scope SELECT NULLIFZERO(
+      snowflake ok         CASE WHEN x = 0 THEN NULL ELSE x END
+  [metric] SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      default   ok         SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date NULLS FIRST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      ossie     ok         SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date NULLS FIRST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+      snowflake ok         SUM(SUM(store_sales.ss_ext_sales_price)) OVER (ORDER BY date_dim.d_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+                          !! result differs from ossie, first row: (None, Decimal('5262470646.52')) vs (None, Decimal('124556714.61'))
+  [metric] RANK() OVER (PARTITION BY store.s_store_sk ORDER BY SUM(store_sales.ss_ext_sales_price) DESC)
+      default   ok         RANK() OVER (PARTITION BY store.s_store_sk ORDER BY SUM(store_sales.ss_ext_sales_price) DESC)
+      ossie     ok         RANK() OVER (PARTITION BY store.s_store_sk ORDER BY SUM(store_sales.ss_ext_sales_price) DESC)
+      snowflake ok         RANK() OVER (PARTITION BY store.s_store_sk ORDER BY SUM(store_sales.ss_ext_sales_price) DESC NULLS FIRST)
+  [metric] SUM(store_sales.ss_ext_sales_price) - LAG(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year, date_dim.d_moy)
+      default   ok         SUM(store_sales.ss_ext_sales_price) - lag(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year NULLS FIRST, date_dim.d_moy NULLS FIRST)
+      ossie     ok         SUM(store_sales.ss_ext_sales_price) - lag(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year NULLS FIRST, date_dim.d_moy NULLS FIRST)
+      snowflake ok         SUM(store_sales.ss_ext_sales_price) - lag(SUM(store_sales.ss_ext_sales_price), 1) OVER (ORDER BY date_dim.d_year, date_dim.d_moy)
+                          !! result differs from ossie, first row: (1998, 1, None) vs (1998, 1, Decimal('-75399822.72'))
+
+  182 expressions; ClickHouse SQL identical in both dialects: 172
+  Ossie dialect runs where default fails: 3; default runs where Ossie fails: 0
+  runs in both, result differs from ossie: default 0, snowflake 2
+  label          default     ossie snowflake
+  ok                 161       164       168
+  parser               3         0         -
+  generator           11        12        14
+  unknown              7         6         0
+  parse error          0         0         0
+
+=== 2. validate_expression on the corpus (should all pass)
+  rejected 0/182
+
+=== 3. Constructs the spec disallows (should all be rejected)
+  rejected  (SELECT 1)
+  rejected  x IN (SELECT 1)
+  rejected  SUM(x) OVER (ORDER BY d GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW)
+  rejected  x = ?
+  rejected  x = :p
+  rejected  CASE WHEN EXISTS (SELECT 1) THEN 1 END
+
+=== 4. Code issues from the PR review (2026-09-27)
+  "'x IN y' NOT IN ('a')"            ossie: "'x NOT IN y' IN ('a')"                clickhouse: "NOT ('x IN y' IN ('a'))"
+  "s NOT IN ('a IN b')"              ossie: "s NOT IN ('a IN b')"                  clickhouse: "NOT (s IN ('a IN b'))"
+  "CHARINDEX('a', s, 3)"             ossie: "POSITION('a' IN s)"                   clickhouse: "POSITION(s, 'a', 3)"
+  'APPROX_PERCENTILE(x, 0.5, 100)'   ossie: 'APPROX_PERCENTILE(x, 0.5)'            clickhouse: 'APPROX_QUANTILE(x, 0.5, 100)'
+
+=== 5. Identifier normalization (spec: unquoted -> upper case)
+  ['SS_EXT_SALES_PRICE', 'STORE_SALES'] rendered: store_sales.ss_ext_sales_price

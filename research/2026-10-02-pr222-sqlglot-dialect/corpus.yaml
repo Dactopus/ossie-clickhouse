@@ -1,0 +1,166 @@
+# Sample expressions for the Ossie function catalog.
+#
+# Derived from the function tables in core-spec/expression_language.md of
+# apache/ossie at adfa9e4 (Apache License 2.0): one sample per listed form,
+# sections "Aggregation Functions" through "Boolean Functions". Window
+# functions, TRY_CAST and IS DISTINCT FROM are not included; the TPC-DS model
+# covers window functions.
+#
+# Column names refer to one literal row (see BASE in evaluate.py):
+#   x = 2.5, s = 'abc-def', d = 2024-03-15, d2 = 2024-05-20,
+#   ts = 2024-03-15 10:30:45.
+
+aggregation:
+  - SUM(x)
+  - COUNT(x)
+  - COUNT(*)
+  - COUNT(DISTINCT x)
+  - AVG(x)
+  - MIN(x)
+  - MAX(x)
+  - STDDEV(x)
+  - STDDEV_POP(x)
+  - STDDEV_SAMP(x)
+  - VARIANCE(x)
+  - VAR_POP(x)
+  - VAR_SAMP(x)
+  - MEDIAN(x)
+  - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)
+  - PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)
+  - APPROX_COUNT_DISTINCT(x)
+  - APPROX_PERCENTILE(x, 0.5)
+  - SUM(DISTINCT x)
+  - SUM(CASE WHEN x > 1 THEN x ELSE 0 END)
+  - COUNT(CASE WHEN x > 1 THEN 1 END)
+
+date_time:
+  - CURRENT_DATE
+  - CURRENT_DATE()
+  - CURRENT_TIMESTAMP
+  - CURRENT_TIMESTAMP()
+  - CURRENT_TIME
+  - CURRENT_TIME()
+  - YEAR(d)
+  - QUARTER(d)
+  - MONTH(d)
+  - DAY(d)
+  - DAYOFYEAR(d)
+  - HOUR(ts)
+  - MINUTE(ts)
+  - SECOND(ts)
+  - EXTRACT(YEAR FROM d)
+  - EXTRACT(MONTH FROM d)
+  - EXTRACT(DAY FROM d)
+  - EXTRACT(WEEK FROM d)
+  - EXTRACT(DAYOFWEEK FROM d)
+  - EXTRACT(DAYOFYEAR FROM d)
+  - EXTRACT(MILLISECOND FROM ts)
+  - DATE_PART('year', d)
+  - DATE_PART('month', d)
+  - DATE_PART('day', d)
+  - DATE_TRUNC('year', d)
+  - DATE_TRUNC('quarter', d)
+  - DATE_TRUNC('month', d)
+  - DATE_TRUNC('week', d)
+  - DATE_TRUNC('day', d)
+  - DATE_TRUNC('hour', ts)
+  - DATE_TRUNC('minute', ts)
+  - DATE_TRUNC('second', ts)
+  - DATEADD(day, 7, d)
+  - DATEADD(month, -1, d)
+  - DATEADD(year, 1, d)
+  - DATEDIFF(day, d, d2)
+  - DATEDIFF(month, d, d2)
+  - DATEDIFF(year, d, d2)
+  - DATE '2024-01-15'
+  - TIMESTAMP_NTZ '2024-01-15 10:30:00'
+  - TIME '10:30:00'
+  - CAST('2024-01-15' AS DATE)
+  - CAST('2024-01-15 10:30:00' AS TIMESTAMP_NTZ)
+  - CAST('10:30:00' AS TIME)
+  - TO_DATE('2024-01-15')
+  - TO_TIMESTAMP('2024-01-15 10:30:00')
+  - TO_DATE('15/01/2024', 'DD/MM/YYYY')
+  - TO_CHAR(d, 'YYYY-MM-DD')
+
+string:
+  - CONCAT(s, s)
+  - s || s
+  - LENGTH(s)
+  - LOWER(s)
+  - UPPER(s)
+  - TRIM(s)
+  - LTRIM(s)
+  - RTRIM(s)
+  - LEFT(s, 2)
+  - RIGHT(s, 2)
+  - SUBSTRING(s, 1, 2)
+  - REPLACE(s, 'a', 'b')
+  - SPLIT_PART(s, '-', 1)
+  - POSITION('a' IN s)
+  - CHARINDEX('a', s)
+  - CONTAINS(s, 'a')
+  - STARTSWITH(s, 'a')
+  - ENDSWITH(s, 'a')
+  - s LIKE 'a%'
+  - s ILIKE 'A%'
+  - REGEXP_LIKE(s, 'a.*')
+  - REGEXP_EXTRACT(s, 'a.')
+  - REGEXP_REPLACE(s, 'a', 'b')
+  - REGEXP_COUNT(s, 'a')
+
+math:
+  - ABS(x)
+  - ROUND(x, 1)
+  - FLOOR(x)
+  - CEIL(x)
+  - CEILING(x)
+  - TRUNC(x, 1)
+  - TRUNCATE(x, 1)
+  - MOD(x, 2)
+  - SIGN(x)
+  - POWER(x, 2)
+  - SQRT(x)
+  - EXP(x)
+  - LN(x)
+  - LOG(10, x)
+  - LOG10(x)
+  - SIN(x)
+  - COS(x)
+  - TAN(x)
+  - ASIN(0.5)
+  - ACOS(0.5)
+  - ATAN(x)
+  - ATAN2(x, x)
+  - RADIANS(x)
+  - DEGREES(x)
+  - PI()
+  - GREATEST(x, 1, 2)
+  - LEAST(x, 1, 2)
+
+conditional:
+  - CASE WHEN x > 1 THEN 'a' ELSE 'b' END
+  - CASE x WHEN 1 THEN 'a' ELSE 'b' END
+  - IF(x > 1, 1, 0)
+  - IFF(x > 1, 1, 0)
+  - NULLIF(x, 1)
+  - COALESCE(x, 1)
+  - IFNULL(x, 1)
+  - NVL(x, 1)
+  - NVL2(x, 1, 0)
+  - ZEROIFNULL(x)
+  - NULLIFZERO(x)
+
+boolean:
+  - x BETWEEN 1 AND 3
+  - x IN (1, 2, 3)
+  - x NOT IN (1, 2)
+  - x IS NULL
+  - x IS NOT NULL
+  - NOT x > 1
+  - x > 1 AND x < 3 OR x = 5
+  - x % 2
+  - x <> 1
+  - x != 1
+  - "TRUE"
+  - "FALSE"
