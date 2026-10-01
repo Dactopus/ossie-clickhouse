@@ -151,6 +151,10 @@ questions, fan-out protection for one-to-many joins, `source` as a query
 and a remote multi-user MCP server on the first real request. Ask for one
 in the [issue tracker](https://github.com/Dactopus/ossie-clickhouse/issues).
 
+[`research/`](research/) holds the experiments behind some decisions in this
+code and the data we share with the Apache Ossie community; nothing there is
+part of the library.
+
 ## License
 
 Apache License 2.0.
