@@ -76,3 +76,35 @@ def test_convert_format_tokens():
 def test_format_must_be_literal():
     with pytest.raises(ValueError, match="string literal"):
         to_clickhouse("TO_CHAR(d, fmt_col)")
+
+
+@pytest.mark.parametrize(
+    ("ossie", "message"),
+    [
+        # longer forms from other engines: a rewrite would drop the extra arguments
+        ("REGEXP_COUNT(s, 'a', 3, 'i')", r"expected REGEXP_COUNT\(str, pattern\), got 4"),
+        ("CONTAINS(s, 'a', 'x')", r"expected CONTAINS\(str, substr\), got 3"),
+        ("SPLIT_PART(s, ',', 1, 2)", r"expected SPLIT_PART\(str, delimiter, part\), got 4"),
+        ("TO_CHAR(d, 'YYYY', 'x')", r"expected TO_CHAR\(date_expr, format\), got 3"),
+        ("TO_DATE(s, 'YYYY', 'x')", r"expected TO_DATE\(string\[, format\]\), got 3"),
+        ("TO_TIMESTAMP(s, 'YYYY', 'x')", r"expected TO_TIMESTAMP\(string\[, format\]\), got 3"),
+        ("APPROX_PERCENTILE(x, 0.5, 100)", r"expected APPROX_PERCENTILE\(expr, p\), got 3"),
+        ("ZEROIFNULL(x, 5)", r"expected ZEROIFNULL\(expr\), got 2"),
+        ("NULLIFZERO(x, 5)", r"expected NULLIFZERO\(expr\), got 2"),
+        ("IFF(a, 1, 2, 3)", r"got 4"),
+        ("CURRENT_TIME(3)", r"expected CURRENT_TIME\(\), got 1"),
+        ("DATEDIFF(day, a, b, c)", r"expected DATEDIFF\(part, start_date, end_date\), got 4"),
+        ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
+        ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
+        ("PERCENTILE_CONT(0.5, 1) WITHIN GROUP (ORDER BY x)", r"got 2 argument"),
+        # too few: a clear error, not an IndexError
+        ("APPROX_PERCENTILE(x)", r"got 1"),
+        ("TO_DATE()", r"got 0"),
+        ("DATEADD(day, 7)", r"got 2"),
+        # a column where the spec wants a date part
+        ("DATE_PART(p, d)", r"p is not a date part"),
+    ],
+)
+def test_rejects_arguments_outside_spec_signature(ossie, message):
+    with pytest.raises(ValueError, match=message):
+        to_clickhouse(ossie)

@@ -7,6 +7,15 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Fixed
+
+- Functions the translator rewrites are checked against the spec's
+  signature. Longer forms from other engines, such as Snowflake's
+  `REGEXP_COUNT(str, pattern, position, flags)`, used to lose their extra
+  arguments and return a different value; they are now rejected with the
+  expected signature. Too few arguments give the same error instead of an
+  `IndexError`, and `DATE_PART` accepts only the spec's date parts.
+
 ## [0.1.0] - 2026-09-30
 
 First release. Ossie schema `0.2.0.dev0`, tested on ClickHouse 26.x with
