@@ -111,12 +111,14 @@ def _run(args: argparse.Namespace) -> int:
 
     # validate
     doc = load_model(args.model)
-    fields, metrics = untranslatable(doc)
+    ex = Executor(connect(args.url), doc) if args.url else None
+    fields, metrics = (
+        (ex.untranslatable_fields, ex.untranslatable_metrics) if ex else untranslatable(doc)
+    )
     problems = [f"field {k}: {v}" for k, v in fields.items()]
     problems += [f"metric {k!r}: {v}" for k, v in metrics.items()]
     where = ""
-    if args.url:
-        ex = Executor(connect(args.url), doc)
+    if ex:
         problems += ex.check()
         where = f" against {ex.client.url}"  # never args.url: it may carry the password
     for p in problems:

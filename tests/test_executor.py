@@ -163,5 +163,6 @@ def test_untranslatable_expressions_are_hidden_and_reported(ex, tmp_path, capsys
     for args in (["validate", str(p)], ["validate", str(p), "--url", ex.client.url]):
         assert main(args) == 1
         err = capsys.readouterr().err
-        assert "field orders.e_count: expected REGEXP_COUNT(str, pattern), got 4" in err
-        assert "metric 'bad_total': expected REGEXP_COUNT(str, pattern), got 4" in err
+        assert "field orders.e_count: cannot parse" in err
+        assert "metric 'bad_total': cannot parse" in err
+        assert err.count("expected REGEXP_COUNT(str, pattern), got 4") == 2
