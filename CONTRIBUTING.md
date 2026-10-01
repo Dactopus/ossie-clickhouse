@@ -111,3 +111,27 @@ Small and focused. Say which spec section a semantic decision rests on.
 CI runs lint, format check and the test suite against a ClickHouse
 service. By submitting a contribution you agree it is licensed under the
 Apache License 2.0, like the rest of the project.
+
+## Releasing
+
+For maintainers. A patch release only fixes bugs and never moves the
+SQLGlot bounds; a minor release raises the lower bound and drops the
+rewrites that made redundant
+([design note](docs/design.md#sqlglot-bounds-move-only-in-minor-releases)).
+
+1. On the branch to release, move the `[Unreleased]` entries in
+   `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD`, leaving `[Unreleased]`
+   empty.
+2. Set `version` in `pyproject.toml` and run `uv lock`, so the package and
+   the version the MCP server reports match the tag.
+3. Push, wait for the three required CI jobs, merge with "Rebase and
+   merge", the only method the repository allows.
+4. Tag the commit on `main`, never one on the branch: rebasing changes the
+   hashes. The release notes are the changelog section plus the install
+   line pinned to the tag.
+
+```bash
+git switch main && git pull --ff-only
+git tag -a vX.Y.Z -m "ossie-clickhouse X.Y.Z" && git push origin vX.Y.Z
+gh release create vX.Y.Z --title X.Y.Z --notes-file notes.md
+```
