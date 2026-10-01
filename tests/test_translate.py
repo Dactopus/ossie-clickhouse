@@ -91,18 +91,26 @@ def test_format_must_be_literal():
         ("APPROX_PERCENTILE(x, 0.5, 100)", r"expected APPROX_PERCENTILE\(expr, p\), got 3"),
         ("ZEROIFNULL(x, 5)", r"expected ZEROIFNULL\(expr\), got 2"),
         ("NULLIFZERO(x, 5)", r"expected NULLIFZERO\(expr\), got 2"),
-        ("IFF(a, 1, 2, 3)", r"got 4"),
+        ("IFF(a, 1, 2, 3)", r"expected IFF\(condition, true_result, false_result\), got 4"),
         ("CURRENT_TIME(3)", r"expected CURRENT_TIME\(\), got 1"),
         ("DATEDIFF(day, a, b, c)", r"expected DATEDIFF\(part, start_date, end_date\), got 4"),
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
         ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
         ("PERCENTILE_CONT(0.5, 1) WITHIN GROUP (ORDER BY x)", r"got 2 argument"),
+        ("PERCENTILE_CONT(0.5)", r"expected PERCENTILE_CONT\(p\) WITHIN GROUP"),
         # too few: a clear error, not an IndexError
         ("APPROX_PERCENTILE(x)", r"got 1"),
         ("TO_DATE()", r"got 0"),
         ("DATEADD(day, 7)", r"got 2"),
+        ("DATE_PART()", r"expected DATE_PART\(part, date_expr\), got 0"),
+        ("REGEXP_COUNT(s)", r"expected REGEXP_COUNT\(str, pattern\), got 1"),
+        ("CONTAINS(s)", r"expected CONTAINS\(str, substr\), got 1"),
         # a column where the spec wants a date part
-        ("DATE_PART(p, d)", r"p is not a date part"),
+        ("DATE_PART(p, d)", r"P is not a date part"),
+        ("DATE_PART(t.year, d)", r"t.year is not a date part"),
+        ("EXTRACT(EPOCH FROM d)", r"EPOCH is not a date part"),
+        # does not tokenize
+        ("'abc", r"cannot parse"),
     ],
 )
 def test_rejects_arguments_outside_spec_signature(ossie, message):

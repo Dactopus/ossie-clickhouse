@@ -16,7 +16,6 @@ import sqlglot.errors
 from ossie import OssieDialect, OssieDocument, OssieExpression
 from sqlglot import exp
 from sqlglot.dialects.dialect import Dialect
-from sqlglot.helper import seq_get
 from sqlglot.parser import Parser
 
 # Preference order when a field or metric carries several dialects.
@@ -36,16 +35,28 @@ def pick_expression(expression: OssieExpression) -> str:
 # --- parsing ----------------------------------------------------------------
 
 
-def _date_delta(cls, signature: str):
-    """Spec puts the date part first: DATEADD(day, 7, d), DATEDIFF(day, d1, d2)."""
-
-    def build(args: Sequence[exp.Expression]) -> exp.Expression:
-        if len(args) != 3:
-            raise sqlglot.errors.ParseError(f"expected {signature}, got {len(args)} argument(s)")
-        return cls(this=seq_get(args, 2), expression=seq_get(args, 1), unit=seq_get(args, 0))
-
-    return build
-
+# Spec signatures of the functions rewritten below, checked on the arguments as
+# written. The default dialect also parses other engines' longer forms, such as
+# Snowflake's REGEXP_COUNT(str, pattern, position, flags); a rewrite would drop
+# the extra arguments and return a different value, so parse() rejects them.
+_SIGNATURES = {
+    "APPROX_PERCENTILE": ("APPROX_PERCENTILE(expr, p)", 2, 2),
+    "TO_DATE": ("TO_DATE(string[, format])", 1, 2),
+    "TO_TIMESTAMP": ("TO_TIMESTAMP(string[, format])", 1, 2),
+    "IFF": ("IFF(condition, true_result, false_result)", 3, 3),
+    "ZEROIFNULL": ("ZEROIFNULL(expr)", 1, 1),
+    "NULLIFZERO": ("NULLIFZERO(expr)", 1, 1),
+    "PERCENTILE_CONT": ("PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
+    "PERCENTILE_DISC": ("PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
+    "CURRENT_TIME": ("CURRENT_TIME()", 0, 0),
+    "TO_CHAR": ("TO_CHAR(date_expr, format)", 2, 2),
+    "SPLIT_PART": ("SPLIT_PART(str, delimiter, part)", 3, 3),
+    "REGEXP_COUNT": ("REGEXP_COUNT(str, pattern)", 2, 2),
+    "CONTAINS": ("CONTAINS(str, substr)", 2, 2),
+    "DATEADD": ("DATEADD(part, amount, date_expr)", 3, 3),
+    "DATEDIFF": ("DATEDIFF(part, start_date, end_date)", 3, 3),
+    "DATE_PART": ("DATE_PART(part, date_expr)", 2, 2),
+}
 
 # Spec: supported date parts for EXTRACT and DATE_PART.
 _DATE_PARTS = {
@@ -54,23 +65,51 @@ _DATE_PARTS = {
 }  # fmt: skip
 
 
+def _date_delta(cls):
+    """Spec puts the date part first: DATEADD(day, 7, d), DATEDIFF(day, d1, d2)."""
+
+    def build(args: Sequence[exp.Expression]) -> exp.Expression:
+        return cls(this=args[2], expression=args[1], unit=args[0])
+
+    return build
+
+
 def _date_part(args: Sequence[exp.Expression]) -> exp.Expression:
-    """DATE_PART('year', d) is EXTRACT(YEAR FROM d)."""
-    part = seq_get(args, 0)
-    if part.name.upper() not in _DATE_PARTS:
-        raise sqlglot.errors.ParseError(
-            f"DATE_PART: {part.sql()} is not a date part; expected one of "
-            + ", ".join(sorted(_DATE_PARTS))
-        )
-    return exp.Extract(this=exp.var(part.name.upper()), expression=seq_get(args, 1))
+    """DATE_PART('year', d) is EXTRACT(YEAR FROM d); parse() checks the part."""
+    part = args[0]
+    if not (part.is_string or isinstance(part, exp.Column) and not part.table):
+        raise sqlglot.errors.ParseError(f"DATE_PART: {part.sql()} is not a date part")
+    return exp.Extract(this=exp.var(part.name.upper()), expression=args[1])
+
+
+def _checked(name: str, build=None):
+    """The builder for ``name``, rejecting argument counts outside its spec signature."""
+    signature, low, high = _SIGNATURES[name]
+    build = (
+        build
+        or Parser.FUNCTIONS.get(name)
+        or (lambda args: exp.Anonymous(this=name, expressions=args))
+    )
+
+    def checked(args: Sequence[exp.Expression], **kwargs) -> exp.Expression:
+        if not low <= len(args) <= high:
+            raise sqlglot.errors.ParseError(f"expected {signature}, got {len(args)} argument(s)")
+        return build(args, **kwargs)  # SQLGlot retries with dialect= on TypeError
+
+    return checked
+
+
+_BUILDERS = {
+    "DATEADD": _date_delta(exp.DateAdd),
+    "DATEDIFF": _date_delta(exp.DateDiff),
+    "DATE_PART": _date_part,
+}
 
 
 class _OssieParser(Parser):
     FUNCTIONS = {
         **Parser.FUNCTIONS,
-        "DATEADD": _date_delta(exp.DateAdd, "DATEADD(part, amount, date_expr)"),
-        "DATEDIFF": _date_delta(exp.DateDiff, "DATEDIFF(part, start_date, end_date)"),
-        "DATE_PART": _date_part,
+        **{name: _checked(name, _BUILDERS.get(name)) for name in _SIGNATURES},
     }
 
 
@@ -89,42 +128,17 @@ _DISALLOWED = (
 )  # fmt: skip
 
 
-# Spec signatures of the functions rewritten below. The default dialect also
-# parses other engines' longer forms, such as Snowflake's
-# REGEXP_COUNT(str, pattern, position, flags); a rewrite would drop the extra
-# arguments and return a different value, so parse() rejects them.
-_SIGNATURES = {
-    "APPROX_PERCENTILE": ("APPROX_PERCENTILE(expr, p)", 2, 2),
-    "TO_DATE": ("TO_DATE(string[, format])", 1, 2),
-    "TO_TIMESTAMP": ("TO_TIMESTAMP(string[, format])", 1, 2),
-    "IFF": ("IFF(condition, true_result, false_result)", 3, 3),
-    "ZEROIFNULL": ("ZEROIFNULL(expr)", 1, 1),
-    "NULLIFZERO": ("NULLIFZERO(expr)", 1, 1),
-    exp.PercentileCont: ("PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
-    exp.PercentileDisc: ("PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
-    exp.CurrentTime: ("CURRENT_TIME()", 0, 0),
-    exp.ToChar: ("TO_CHAR(date_expr, format)", 2, 2),
-    exp.SplitPart: ("SPLIT_PART(str, delimiter, part)", 3, 3),
-    exp.RegexpCount: ("REGEXP_COUNT(str, pattern)", 2, 2),
-    exp.Contains: ("CONTAINS(str, substr)", 2, 2),
-}
-
-
-def _argument_problem(node: exp.Expression) -> str | None:
-    if isinstance(node, exp.WithinGroup) and isinstance(
-        node.this, exp.PercentileCont | exp.PercentileDisc
-    ):
-        keys = len(node.expression.expressions)
+def _shape_problem(node: exp.Expression) -> str | None:
+    """Spec shapes an argument count cannot express."""
+    if isinstance(node, exp.PercentileCont | exp.PercentileDisc):
+        signature = _SIGNATURES[node.sql_name()][0]
+        if not isinstance(node.parent, exp.WithinGroup):
+            return f"expected {signature}"
+        keys = len(node.parent.expression.expressions)
         if keys != 1:
-            return f"expected {_SIGNATURES[type(node.this)][0]}, got {keys} ORDER BY keys"
-    if isinstance(node, exp.Anonymous):
-        key, n = node.name.upper(), len(node.expressions)
-    else:
-        key, n = type(node), sum(v is not None for v in node.args.values())
-    if key in _SIGNATURES:
-        signature, low, high = _SIGNATURES[key]
-        if not low <= n <= high:
-            return f"expected {signature}, got {n} argument(s)"
+            return f"expected {signature}, got {keys} ORDER BY keys"
+    if isinstance(node, exp.Extract) and node.name.upper() not in _DATE_PARTS:
+        return f"{node.name} is not a date part; expected one of " + ", ".join(sorted(_DATE_PARTS))
     return None
 
 
@@ -132,14 +146,14 @@ def parse(expression: str) -> exp.Expression:
     """Parse an Ossie expression, rejecting constructs the spec disallows."""
     try:
         tree = sqlglot.parse_one(expression, read=OssieSQL)
-    except sqlglot.errors.ParseError as e:
+    except sqlglot.errors.SqlglotError as e:
         raise ValueError(f"cannot parse {expression!r}: {str(e).splitlines()[0]}") from e
     for node in tree.walk():
         if isinstance(node, _DISALLOWED):
             raise ValueError(
                 f"{type(node).__name__} is not allowed in an Ossie expression: {expression!r}"
             )
-        if problem := _argument_problem(node):
+        if problem := _shape_problem(node):
             raise ValueError(f"{problem}: {expression!r}")
     return tree
 
