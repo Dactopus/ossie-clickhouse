@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-01
+
 ### Fixed
 
 - Functions the translator rewrites are checked against the spec's
