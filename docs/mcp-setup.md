@@ -78,6 +78,7 @@ mean" hint reaches the agent.
 `HAVING` (`total_sales > 1000000`). A window metric cannot be filtered:
 select it and filter the rows. `order_by` names metrics or dimensions,
 `"name desc"` for descending; empty means the first metric descending.
+Rows without a value come last either way, so `limit` may cut them off.
 The server's `instructions` tell the agent to start with `list_model`,
 never to write SQL, and never to add up or rank rows itself.
 

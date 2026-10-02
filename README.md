@@ -89,6 +89,7 @@ known object. The other modules are internal.
   [DuckDB](https://duckdb.org) and the spec text.
 - Rows come sorted by the first metric, descending, unless `order_by` says
   otherwise, so the top rows come first and nobody has to rank them by hand.
+  Rows without a value (NULL) come last in either direction.
 - Names resolve case-insensitively; SQL uses the physical names as the
   model writes them. The same question and model always give the same SQL.
 - Errors name the nearest known metric, field or dataset, so an agent can

@@ -123,6 +123,10 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 - NULLs sort last in both directions, ClickHouse's default (the spec is
   silent): `NULL_ORDERING` on the parser dialect, `nulls_first=False` in
   the planner. Keep it when parsing switches to the Ossie dialect.
+  `NULLS FIRST | LAST` is rejected: the spec's syntax has none.
+- An empty window frame sums to 0, not NULL, and a `RANGE` offset counts
+  NULL keys as within it. `parse()` accepts only `ROWS` frames that hold
+  the current row and `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
 - `PERCENTILE_DISC` is an index into a sorted `groupArray`, not
   `quantileExact`, which picks one element too high whenever `p * n` is
   whole (Postgres semantics: the first value whose cumulative share
