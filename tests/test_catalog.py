@@ -185,12 +185,7 @@ WINDOWS = [
     "AVG(v) OVER (ORDER BY k DESC ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
     "ROW_NUMBER() OVER (ORDER BY k)",
     "RANK() OVER (ORDER BY k DESC)",
-    pytest.param(
-        "LAG(v, 1) OVER (ORDER BY k)",
-        marks=pytest.mark.xfail(
-            strict=True, reason="ClickHouse lag returns the type default (0), not NULL"
-        ),
-    ),
+    "LAG(v, 1) OVER (ORDER BY k)",
 ]
 
 
@@ -200,4 +195,40 @@ def test_window_null_order(expr, clickhouse, duck):
         f"SELECT id, {to_clickhouse(expr)} FROM {CH_WINDOW} ORDER BY id"
     ).result_rows
     expected = duck.execute(f"SELECT id, {expr} FROM {DUCK_WINDOW} ORDER BY id").fetchall()
+    assert [tuple(map(norm, r)) for r in got] == [tuple(map(norm, r)) for r in expected]
+
+
+# Offset base: v is not Nullable, w holds NULLs. ClickHouse answers a missing row with
+# the type's default (0) and skips NULLs in first_value / last_value; the spec (ANSI)
+# and DuckDB give NULL and respect NULLs.
+CH_OFFSET = (
+    "(SELECT tupleElement(r, 1) AS id, tupleElement(r, 2) AS v, tupleElement(r, 3) AS w FROM "
+    "(SELECT arrayJoin([(1, 10.0, NULL), (2, 20.0, 5.0), (3, 30.0, NULL)]::"
+    "Array(Tuple(UInt8, Float64, Nullable(Float64)))) AS r))"
+)
+DUCK_OFFSET = (
+    "(SELECT * FROM (VALUES (1, 10.0, NULL), (2, 20.0, 5.0), (3, 30.0, NULL)) t(id, v, w))"
+)
+ALL_ROWS = "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
+OFFSETS = [
+    "LAG(v) OVER (ORDER BY id)",
+    "LAG(v, 2) OVER (ORDER BY id)",
+    "LAG(v, 1, -1) OVER (ORDER BY id)",
+    "LAG(w, 1) OVER (ORDER BY id)",
+    "LEAD(v, 1) OVER (ORDER BY id)",
+    "LEAD(v, 1, 0) OVER (ORDER BY id)",
+    "NTH_VALUE(v, 2) OVER (ORDER BY id)",
+    "NTH_VALUE(w, 2) OVER (ORDER BY id)",
+    "FIRST_VALUE(w) OVER (ORDER BY id)",
+    f"LAST_VALUE(w) OVER (ORDER BY id {ALL_ROWS})",
+    "FIRST_VALUE(v) OVER (ORDER BY id)",
+]
+
+
+@pytest.mark.parametrize("expr", OFFSETS)
+def test_window_offsets(expr, clickhouse, duck):
+    got = clickhouse.query(
+        f"SELECT id, {to_clickhouse(expr)} FROM {CH_OFFSET} ORDER BY id"
+    ).result_rows
+    expected = duck.execute(f"SELECT id, {expr} FROM {DUCK_OFFSET} ORDER BY id").fetchall()
     assert [tuple(map(norm, r)) for r in got] == [tuple(map(norm, r)) for r in expected]

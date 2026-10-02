@@ -56,6 +56,11 @@ _SIGNATURES = {
     "DATEADD": ("DATEADD(part, amount, date_expr)", 3, 3),
     "DATEDIFF": ("DATEDIFF(part, start_date, end_date)", 3, 3),
     "DATE_PART": ("DATE_PART(part, date_expr)", 2, 2),
+    "LAG": ("LAG(expr[, offset[, default]])", 1, 3),
+    "LEAD": ("LEAD(expr[, offset[, default]])", 1, 3),
+    "NTH_VALUE": ("NTH_VALUE(expr, n)", 2, 2),
+    "FIRST_VALUE": ("FIRST_VALUE(expr)", 1, 1),
+    "LAST_VALUE": ("LAST_VALUE(expr)", 1, 1),
 }
 
 # Spec: supported date parts for EXTRACT and DATE_PART.
@@ -310,6 +315,18 @@ def rewrite(node: exp.Expression) -> exp.Expression:
         return _f("arrayElement", parts, node.args["part_index"])
     if isinstance(node, exp.RegexpCount):
         return _f("countMatches", node.this, node.expression)
+    # Spec windows follow ANSI SQL: NULL when the row does not exist, and NULLs are
+    # respected. ClickHouse returns the type's default (0) for a non-Nullable argument
+    # and skips NULLs in first_value / last_value.
+    if (isinstance(node, exp.Lag | exp.Lead) and node.args.get("default") is None) or isinstance(
+        node, exp.NthValue
+    ):
+        node.set("this", _f("toNullable", node.this))
+        return node
+    if isinstance(node, exp.FirstValue | exp.LastValue) and not isinstance(
+        node.parent, exp.RespectNulls | exp.IgnoreNulls
+    ):
+        return exp.RespectNulls(this=node)
     if isinstance(node, exp.Contains):
         return exp.GT(
             this=_f("position", node.this, node.expression), expression=exp.Literal.number(0)

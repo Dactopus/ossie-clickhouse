@@ -22,6 +22,15 @@ a minor release may change the Python API.
   PRECEDING AND CURRENT ROW`. ClickHouse answered an empty frame with 0
   instead of NULL, and a `RANGE` offset counted NULL keys as within it.
 
+### Fixed
+
+- `LAG` and `LEAD` without a default, and `NTH_VALUE` past the end of the
+  frame, return NULL as the spec (ANSI SQL) says, not 0. ClickHouse falls
+  back to the type's default when the argument is not Nullable, so a
+  month-over-month change on a non-Nullable column showed the first
+  month's full value as its change. `FIRST_VALUE` and `LAST_VALUE`
+  respect NULLs; ClickHouse skips them by default.
+
 ## [0.1.1] - 2026-10-01
 
 ### Fixed
