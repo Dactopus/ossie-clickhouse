@@ -120,6 +120,9 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   and `toDayOfYear`.
 - Table names are `database.table`; Ossie `source` may have three parts.
 - `REGEXP_REPLACE` replaces all matches (spec reading); `DAYOFWEEK` is ISO.
+- NULLs sort last in both directions, ClickHouse's default (the spec is
+  silent): `NULL_ORDERING` on the parser dialect, `nulls_first=False` in
+  the planner. Keep it when parsing switches to the Ossie dialect.
 - `PERCENTILE_DISC` is an index into a sorted `groupArray`, not
   `quantileExact`, which picks one element too high whenever `p * n` is
   whole (Postgres semantics: the first value whose cumulative share

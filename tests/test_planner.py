@@ -86,7 +86,8 @@ def test_order_by():
         dimensions=("item.i_brand",),
         order_by=("item.i_brand", "TOTAL_SALES"),
     )
-    assert "ORDER BY i_brand ASC NULLS FIRST, total_sales ASC NULLS FIRST" in P.sql(q)
+    # NULLs last both ways: ClickHouse's default, so no NULLS clause (docs/design.md).
+    assert "ORDER BY i_brand ASC, total_sales ASC SETTINGS" in P.sql(q)
     # The caller's spelling of dataset.field never leaks into ORDER BY: aliases are the model's.
     q = Query(dimensions=("date_dim.D_YEAR",), order_by=("DATE_DIM.D_YEAR",))
     assert "AS d_year" in P.sql(q) and "ORDER BY d_year ASC" in P.sql(q)
@@ -397,7 +398,7 @@ def test_having_values(tpcds):
     direct = tpcds.query(
         "SELECT i.i_brand, SUM(ss.ss_ext_sales_price) AS s FROM tpcds.store_sales ss "
         "LEFT JOIN tpcds.item i ON ss.ss_item_sk = i.i_item_sk GROUP BY i.i_brand "
-        "HAVING s > 100000 ORDER BY i.i_brand NULLS FIRST SETTINGS join_use_nulls = 1"
+        "HAVING s > 100000 ORDER BY i.i_brand NULLS LAST SETTINGS join_use_nulls = 1"
     ).result_rows
     planned = tpcds.query(
         P.sql(
