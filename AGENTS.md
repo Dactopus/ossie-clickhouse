@@ -127,6 +127,11 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 - An empty window frame sums to 0, not NULL, and a `RANGE` offset counts
   NULL keys as within it. `parse()` accepts only `ROWS` frames that hold
   the current row and `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
+- `lag`, `lead` and `nth_value` answer a missing row with the type's
+  default (0) unless the argument is Nullable, and `first_value` /
+  `last_value` skip NULLs. The spec follows ANSI (NULL, NULLs respected):
+  wrap the argument in `toNullable` when no default is given, add
+  `RESPECT NULLS`.
 - `PERCENTILE_DISC` is an index into a sorted `groupArray`, not
   `quantileExact`, which picks one element too high whenever `p * n` is
   whole (Postgres semantics: the first value whose cumulative share

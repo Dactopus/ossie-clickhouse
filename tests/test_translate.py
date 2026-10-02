@@ -41,6 +41,12 @@ def test_translate_uses_picked_dialect():
         ),
         ("APPROX_PERCENTILE(x, 0.5)", "quantileTDigest(0.5)(x)"),
         ("APPROX_COUNT_DISTINCT(x)", "uniq(x)"),
+        # windows: NULL for a missing row, NULLs respected (ANSI)
+        ("LAG(v, 1) OVER (ORDER BY k)", "lag(toNullable(v), 1) OVER (ORDER BY k)"),
+        ("LEAD(v, 1, 0) OVER (ORDER BY k)", "lead(v, 1, 0) OVER (ORDER BY k)"),
+        ("NTH_VALUE(v, 2) OVER (ORDER BY k)", "NTH_VALUE(toNullable(v), 2) OVER (ORDER BY k)"),
+        ("FIRST_VALUE(v) OVER (ORDER BY k)", "FIRST_VALUE(v) RESPECT NULLS OVER (ORDER BY k)"),
+        ("LAST_VALUE(v) IGNORE NULLS OVER ()", "LAST_VALUE(v) IGNORE NULLS OVER ()"),
         # date/time
         ("CURRENT_TIME", "toTime(now())"),
         ("DAYOFYEAR(d)", "toDayOfYear(d)"),
@@ -93,6 +99,11 @@ def test_format_must_be_literal():
         ("NULLIFZERO(x, 5)", r"expected NULLIFZERO\(expr\), got 2"),
         ("IFF(a, 1, 2, 3)", r"expected IFF\(condition, true_result, false_result\), got 4"),
         ("CURRENT_TIME(3)", r"expected CURRENT_TIME\(\), got 1"),
+        (
+            "LAG(v, 1, 0, 2) OVER (ORDER BY k)",
+            r"expected LAG\(expr\[, offset\[, default\]\]\), got 4",
+        ),
+        ("NTH_VALUE(v) OVER (ORDER BY k)", r"expected NTH_VALUE\(expr, n\), got 1"),
         ("DATEDIFF(day, a, b, c)", r"expected DATEDIFF\(part, start_date, end_date\), got 4"),
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
         ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
