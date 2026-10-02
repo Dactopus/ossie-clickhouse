@@ -16,6 +16,11 @@ a minor release may change the Python API.
   date, started from their sum. The spec does not define NULL ordering;
   this is ClickHouse's and DuckDB's default, so the generated SQL carries
   no `NULLS` clause.
+- Expressions with `NULLS FIRST | LAST`, or with a window frame the spec
+  does not list, are rejected; `validate` reports them. Accepted frames:
+  `ROWS` frames that hold the current row, and `RANGE BETWEEN UNBOUNDED
+  PRECEDING AND CURRENT ROW`. ClickHouse answered an empty frame with 0
+  instead of NULL, and a `RANGE` offset counted NULL keys as within it.
 
 ## [0.1.1] - 2026-10-01
 

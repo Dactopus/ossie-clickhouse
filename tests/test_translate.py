@@ -109,6 +109,16 @@ def test_format_must_be_literal():
         ("DATE_PART(p, d)", r"P is not a date part"),
         ("DATE_PART(t.year, d)", r"t.year is not a date part"),
         ("EXTRACT(EPOCH FROM d)", r"EPOCH is not a date part"),
+        # window frames outside the spec: an empty frame or a RANGE offset goes wrong
+        ("SUM(v) OVER (ORDER BY k ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING)", r"window frame"),
+        ("SUM(v) OVER (ORDER BY k ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)", r"frame"),
+        ("SUM(v) OVER (ORDER BY k RANGE BETWEEN 1 PRECEDING AND CURRENT ROW)", r"frame"),
+        ("SUM(v) OVER (ORDER BY k RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)", r"frame"),
+        ("SUM(v) OVER (ORDER BY k GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW)", r"frame"),
+        # the spec's ORDER BY has no NULLS FIRST | LAST
+        ("SUM(v) OVER (ORDER BY k NULLS FIRST)", r"NULLS FIRST \| LAST"),
+        ("SUM(v) OVER (ORDER BY k DESC NULLS LAST)", r"NULLS FIRST \| LAST"),
+        ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x NULLS LAST)", r"NULLS FIRST \| LAST"),
         # does not tokenize
         ("'abc", r"cannot parse"),
     ],

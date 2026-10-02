@@ -112,6 +112,15 @@ class _OssieParser(Parser):
         **{name: _checked(name, _BUILDERS.get(name)) for name in _SIGNATURES},
     }
 
+    def _parse_ordered(self, parse_method=None):
+        ordered = super()._parse_ordered(parse_method)
+        # The spec's ORDER BY has no NULLS FIRST | LAST (docs/design.md). The AST cannot
+        # tell an explicit NULLS LAST from the default, so look at the tokens just read.
+        last = [t.text.upper() for t in self._tokens[max(self._index - 2, 0) : self._index]]
+        if ordered and last in (["NULLS", "FIRST"], ["NULLS", "LAST"]):
+            self.raise_error("NULLS FIRST | LAST is not part of the Ossie ORDER BY syntax")
+        return ordered
+
 
 class OssieSQL(Dialect):
     """SQLGlot's default dialect plus the spec shapes it parses differently.
@@ -130,6 +139,37 @@ _DISALLOWED = (
 )  # fmt: skip
 
 
+def _bound(value: str | exp.Expression | None, side: str | None) -> str:
+    """A frame bound in upper case, a number as N: UNBOUNDED PRECEDING, N PRECEDING..."""
+    if isinstance(value, exp.Literal) and value.is_number:
+        value = "N"
+    return f"{value or 'CURRENT ROW'} {side or ''}".strip().upper()
+
+
+# Spec frames: ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW, ROWS BETWEEN n PRECEDING
+# AND n FOLLOWING, RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW; its examples also
+# use n PRECEDING AND CURRENT ROW. ROWS frames that hold the current row are accepted.
+# Others go wrong in ClickHouse: an empty frame sums to 0, not NULL, and RANGE offsets
+# put NULL keys within any offset.
+_ROWS_STARTS = {"UNBOUNDED PRECEDING", "N PRECEDING", "CURRENT ROW"}
+_ROWS_ENDS = {"CURRENT ROW", "N FOLLOWING", "UNBOUNDED FOLLOWING"}
+
+
+def _frame_problem(spec: exp.WindowSpec) -> str | None:
+    kind = (spec.args.get("kind") or "").upper()
+    start = _bound(spec.args.get("start"), spec.args.get("start_side"))
+    end = _bound(spec.args.get("end"), spec.args.get("end_side"))
+    if kind == "ROWS" and start in _ROWS_STARTS and end in _ROWS_ENDS:
+        return None
+    if (kind, start, end) == ("RANGE", "UNBOUNDED PRECEDING", "CURRENT ROW"):
+        return None
+    return (
+        f"window frame {spec.sql()} is not supported; use ROWS BETWEEN UNBOUNDED or "
+        "n PRECEDING (or CURRENT ROW) AND CURRENT ROW (or n FOLLOWING), or "
+        "RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
+    )
+
+
 def _shape_problem(node: exp.Expression) -> str | None:
     """Spec shapes an argument count cannot express."""
     if isinstance(node, exp.PercentileCont | exp.PercentileDisc):
@@ -141,6 +181,8 @@ def _shape_problem(node: exp.Expression) -> str | None:
             return f"expected {signature}, got {keys} ORDER BY keys"
     if isinstance(node, exp.Extract) and node.name.upper() not in _DATE_PARTS:
         return f"{node.name} is not a date part; expected one of " + ", ".join(sorted(_DATE_PARTS))
+    if isinstance(node, exp.WindowSpec):
+        return _frame_problem(node)
     return None
 
 
