@@ -43,10 +43,16 @@ def test_translate_uses_picked_dialect():
         ("APPROX_COUNT_DISTINCT(x)", "uniq(x)"),
         # windows: NULL for a missing row, NULLs respected (ANSI)
         ("LAG(v, 1) OVER (ORDER BY k)", "lag(toNullable(v), 1) OVER (ORDER BY k)"),
-        ("LEAD(v, 1, 0) OVER (ORDER BY k)", "lead(v, 1, 0) OVER (ORDER BY k)"),
+        ("LEAD(v, 1, 0) OVER (ORDER BY k)", "lead(toNullable(v), 1, 0) OVER (ORDER BY k)"),
         ("NTH_VALUE(v, 2) OVER (ORDER BY k)", "NTH_VALUE(toNullable(v), 2) OVER (ORDER BY k)"),
         ("FIRST_VALUE(v) OVER (ORDER BY k)", "FIRST_VALUE(v) RESPECT NULLS OVER (ORDER BY k)"),
         ("LAST_VALUE(v) IGNORE NULLS OVER ()", "LAST_VALUE(v) IGNORE NULLS OVER ()"),
+        # nested rewrites survive a rewrite of the enclosing node
+        (
+            "FIRST_VALUE(ZEROIFNULL(v)) OVER (ORDER BY k)",
+            "FIRST_VALUE(ifNull(v, 0)) RESPECT NULLS OVER (ORDER BY k)",
+        ),
+        ("DAYOFYEAR(TO_DATE(s))", "toDayOfYear(toDate(s))"),
         # date/time
         ("CURRENT_TIME", "toTime(now())"),
         ("DAYOFYEAR(d)", "toDayOfYear(d)"),
@@ -104,6 +110,9 @@ def test_format_must_be_literal():
             r"expected LAG\(expr\[, offset\[, default\]\]\), got 4",
         ),
         ("NTH_VALUE(v) OVER (ORDER BY k)", r"expected NTH_VALUE\(expr, n\), got 1"),
+        # ClickHouse ignores IGNORE NULLS on these and answers as if respected
+        ("LAG(v) IGNORE NULLS OVER (ORDER BY k)", r"IGNORE NULLS is not supported for LAG"),
+        ("NTH_VALUE(v, 2 IGNORE NULLS) OVER ()", r"IGNORE NULLS is not supported for NTH_VALUE"),
         ("DATEDIFF(day, a, b, c)", r"expected DATEDIFF\(part, start_date, end_date\), got 4"),
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
         ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),

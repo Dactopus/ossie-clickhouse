@@ -29,7 +29,11 @@ a minor release may change the Python API.
   back to the type's default when the argument is not Nullable, so a
   month-over-month change on a non-Nullable column showed the first
   month's full value as its change. `FIRST_VALUE` and `LAST_VALUE`
-  respect NULLs; ClickHouse skips them by default.
+  respect NULLs; ClickHouse skips them by default. `IGNORE NULLS` on
+  `LAG`, `LEAD` and `NTH_VALUE` is rejected: ClickHouse ignored it.
+- A rewritten function inside another rewritten one is translated too:
+  `DAYOFYEAR(TO_DATE(s))` used to leave `TO_DATE` for ClickHouse, which
+  has no such function.
 
 ## [0.1.1] - 2026-10-01
 

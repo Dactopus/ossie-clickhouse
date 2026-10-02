@@ -188,6 +188,11 @@ def _shape_problem(node: exp.Expression) -> str | None:
         return f"{node.name} is not a date part; expected one of " + ", ".join(sorted(_DATE_PARTS))
     if isinstance(node, exp.WindowSpec):
         return _frame_problem(node)
+    # ClickHouse accepts IGNORE NULLS here and silently ignores it.
+    if isinstance(node, exp.IgnoreNulls) and isinstance(
+        node.this, exp.Lag | exp.Lead | exp.NthValue
+    ):
+        return f"IGNORE NULLS is not supported for {node.this.sql_name()}"
     return None
 
 
@@ -317,10 +322,9 @@ def rewrite(node: exp.Expression) -> exp.Expression:
         return _f("countMatches", node.this, node.expression)
     # Spec windows follow ANSI SQL: NULL when the row does not exist, and NULLs are
     # respected. ClickHouse returns the type's default (0) for a non-Nullable argument
-    # and skips NULLs in first_value / last_value.
-    if (isinstance(node, exp.Lag | exp.Lead) and node.args.get("default") is None) or isinstance(
-        node, exp.NthValue
-    ):
+    # and skips NULLs in first_value / last_value. A Nullable argument also lets a
+    # NULL or Nullable default through (ClickHouse wants the argument's type).
+    if isinstance(node, exp.Lag | exp.Lead | exp.NthValue):
         node.set("this", _f("toNullable", node.this))
         return node
     if isinstance(node, exp.FirstValue | exp.LastValue) and not isinstance(
@@ -336,8 +340,19 @@ def rewrite(node: exp.Expression) -> exp.Expression:
 
 def to_clickhouse(expression: str | exp.Expression) -> str:
     """ClickHouse SQL for an Ossie expression."""
-    tree = parse(expression) if isinstance(expression, str) else expression
-    return tree.transform(rewrite).sql(dialect="clickhouse")
+    tree = parse(expression) if isinstance(expression, str) else expression.copy()
+    # Bottom-up, so a rewrite that replaces a node still sees its arguments rewritten;
+    # Expression.transform does not descend into a replaced node.
+    for node in reversed(list(tree.dfs())):
+        parent, arg_key, index = node.parent, node.arg_key, node.index
+        new = rewrite(node)
+        if new is node:
+            continue
+        if parent is None:
+            tree = new
+        else:
+            parent.set(arg_key, new, index)
+    return tree.sql(dialect="clickhouse")
 
 
 def translate(expression: OssieExpression) -> str:
