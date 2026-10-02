@@ -7,6 +7,16 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Changed
+
+- NULLs sort last in both directions, in window `ORDER BY` inside model
+  expressions and in a query's `order_by`. Ascending orderings used to put
+  NULLs first, a default inherited from SQLGlot rather than chosen; a
+  running total over a key with NULLs, such as sales without a matching
+  date, started from their sum. The spec does not define NULL ordering;
+  this is ClickHouse's and DuckDB's default, so the generated SQL carries
+  no `NULLS` clause.
+
 ## [0.1.1] - 2026-10-01
 
 ### Fixed

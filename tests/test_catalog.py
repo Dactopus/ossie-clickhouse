@@ -165,3 +165,34 @@ def test_time_type_executes(expr, clickhouse):
     """clickhouse-connect does not decode Time, so compare as string."""
     got = clickhouse.query(f"SELECT toString({to_clickhouse(expr)})").result_rows[0][0]
     assert got.count(":") == 2
+
+
+# Window base: order key k with a NULL; id identifies the row in the comparison.
+CH_WINDOW = (
+    "(SELECT tupleElement(r, 1) AS id, tupleElement(r, 2) AS k, tupleElement(r, 3) AS v FROM "
+    "(SELECT arrayJoin([(1, 1, 10.0), (2, NULL, 20.0), (3, 2, 30.0)]::"
+    "Array(Tuple(UInt8, Nullable(Int32), Float64))) AS r))"
+)
+DUCK_WINDOW = "(SELECT * FROM (VALUES (1, 1, 10.0), (2, NULL, 20.0), (3, 2, 30.0)) t(id, k, v))"
+# Spec is silent on NULL ordering; NULLs sort last both ways, as DuckDB does (docs/design.md).
+WINDOWS = [
+    "SUM(v) OVER (ORDER BY k ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+    "SUM(v) OVER (ORDER BY k DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+    "ROW_NUMBER() OVER (ORDER BY k)",
+    "RANK() OVER (ORDER BY k DESC)",
+    pytest.param(
+        "LAG(v, 1) OVER (ORDER BY k)",
+        marks=pytest.mark.xfail(
+            strict=True, reason="ClickHouse lag returns the type default (0), not NULL"
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize("expr", WINDOWS)
+def test_window_null_order(expr, clickhouse, duck):
+    got = clickhouse.query(
+        f"SELECT id, {to_clickhouse(expr)} FROM {CH_WINDOW} ORDER BY id"
+    ).result_rows
+    expected = duck.execute(f"SELECT id, {expr} FROM {DUCK_WINDOW} ORDER BY id").fetchall()
+    assert [tuple(map(norm, r)) for r in got] == [tuple(map(norm, r)) for r in expected]

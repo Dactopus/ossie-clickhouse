@@ -325,7 +325,7 @@ class Planner:
                     f"order_by {name!r} is not a selected metric or dimension"
                     f"{_suggest(name, dict.fromkeys(aliases.values()))}"
                 )
-            out.append(exp.Ordered(this=exp.column(alias), desc=desc, nulls_first=not desc))
+            out.append(exp.Ordered(this=exp.column(alias), desc=desc, nulls_first=False))
         return out
 
     def _table(self, ds: OssieDataset) -> exp.Expression:

@@ -40,6 +40,28 @@ spec differ, the test pins the spec's value with a section reference:
 cumulative share reaches `p` (ClickHouse's `quantileExact` picks one too
 high whenever `p * n` is whole).
 
+## NULLs sort last in both directions
+
+The spec does not define where NULLs go in `ORDER BY`, and its window
+syntax (`ORDER BY order_expr [ASC|DESC]`) has no `NULLS FIRST | LAST` for
+the model author to say it (checked in `expression_language.md`,
+`spec.md` and `spec.yaml` at apache/ossie b6c702e). Engines differ:
+ClickHouse 26.9 and DuckDB 1.5.6 put NULLs last both ways; Postgres treats
+NULL as larger than any value, last ascending and first descending;
+SQLGlot's default dialect, which the parser derives from, treats it as
+smaller, first ascending. The translator used to inherit that last one,
+and the planner matched it, so a running total ordered by a key with NULLs
+started from their sum: on TPC-DS, with `LEFT JOIN`s, the 129,850 sales
+without a matching date came first in `cumulative_sales`.
+
+Chosen: NULLs last both ways. It is ClickHouse's default, so the generated
+SQL carries no `NULLS` clause, and it agrees with DuckDB, the reference
+engine in tests, so no expected value needs pinning. For a query's
+`order_by` it also keeps rows without a value at the end of a top-N list
+in either direction. The parser dialect sets `NULL_ORDERING`; the Ossie
+dialect from apache/ossie PR #222 inherits SQLGlot's default, so switching
+to it must keep the setting. Reopen if the spec defines NULL ordering.
+
 ## Many-to-one inferred from keys
 
 The spec has no cardinality attribute. A relationship is used only when its

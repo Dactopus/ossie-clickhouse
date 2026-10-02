@@ -119,6 +119,8 @@ class OssieSQL(Dialect):
     Mirrors apache/ossie PR #222; switch to ``read="ossie"`` once it merges."""
 
     Parser = _OssieParser
+    # Spec is silent; NULLs sort last both ways, as in ClickHouse and DuckDB (docs/design.md).
+    NULL_ORDERING = "nulls_are_last"
 
 
 _DISALLOWED = (
