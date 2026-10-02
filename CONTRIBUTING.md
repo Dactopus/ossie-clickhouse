@@ -68,8 +68,8 @@ done
 ```
 
 ```bash
-uv run ruff check src tests
-uv run ruff format src tests
+uv run ruff check src tests research
+uv run ruff format src tests research
 ```
 
 ## Rules that shape the code
@@ -104,6 +104,7 @@ pull request:
 | `src/ossie_clickhouse/mcp_server.py` | [MCP](https://modelcontextprotocol.io) tools, behind the `[mcp]` extra. |
 | `src/ossie_clickhouse/cli.py` | `ossie-clickhouse` command. |
 | `tests/` | pytest; fixtures in `tests/fixtures/`. |
+| `research/` | Studies behind decisions, with data shared with Apache Ossie; not part of the package. |
 
 ## Pull requests
 

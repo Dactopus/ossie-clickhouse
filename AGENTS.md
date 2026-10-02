@@ -133,14 +133,16 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 ## Development
 
 Python 3.11+, managed with uv. Layout: `src/ossie_clickhouse/` (library and
-CLI), `tests/` (pytest, fixtures in `tests/fixtures/`), `docs/`.
+CLI), `tests/` (pytest, fixtures in `tests/fixtures/`), `docs/`, `research/`
+(studies behind decisions and data for Apache Ossie; never imported by the
+library or tests, linted with the rest).
 
 ```bash
 uv sync                       # install with dev tools
 uv run pytest                 # tests; ClickHouse-dependent ones skip when no server
 uv run pytest -m "not integration"   # unit tests only
-uv run ruff check src tests   # lint
-uv run ruff format src tests  # format
+uv run ruff check src tests research   # lint
+uv run ruff format src tests research  # format
 uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml [--url http://127.0.0.1:8123]
 uv run ossie-clickhouse sql tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand
 uv run ossie-clickhouse query tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand --json
