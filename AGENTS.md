@@ -130,8 +130,8 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 - `lag`, `lead` and `nth_value` answer a missing row with the type's
   default (0) unless the argument is Nullable, and `first_value` /
   `last_value` skip NULLs. The spec follows ANSI (NULL, NULLs respected):
-  wrap the argument in `toNullable` when no default is given, add
-  `RESPECT NULLS`.
+  wrap the argument in `toNullable`, add `RESPECT NULLS`. ClickHouse
+  ignores `IGNORE NULLS` on the first three, so `parse()` rejects it.
 - `PERCENTILE_DISC` is an index into a sorted `groupArray`, not
   `quantileExact`, which picks one element too high whenever `p * n` is
   whole (Postgres semantics: the first value whose cumulative share

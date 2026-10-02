@@ -189,13 +189,15 @@ WINDOWS = [
 ]
 
 
+def check_rows(expr, clickhouse, duck, ch_base, duck_base):
+    got = clickhouse.query(f"SELECT id, {to_clickhouse(expr)} FROM {ch_base} ORDER BY id")
+    expected = duck.execute(f"SELECT id, {expr} FROM {duck_base} ORDER BY id").fetchall()
+    assert [tuple(map(norm, r)) for r in got.result_rows] == [tuple(map(norm, r)) for r in expected]
+
+
 @pytest.mark.parametrize("expr", WINDOWS)
 def test_window_null_order(expr, clickhouse, duck):
-    got = clickhouse.query(
-        f"SELECT id, {to_clickhouse(expr)} FROM {CH_WINDOW} ORDER BY id"
-    ).result_rows
-    expected = duck.execute(f"SELECT id, {expr} FROM {DUCK_WINDOW} ORDER BY id").fetchall()
-    assert [tuple(map(norm, r)) for r in got] == [tuple(map(norm, r)) for r in expected]
+    check_rows(expr, clickhouse, duck, CH_WINDOW, DUCK_WINDOW)
 
 
 # Offset base: v is not Nullable, w holds NULLs. ClickHouse answers a missing row with
@@ -222,13 +224,14 @@ OFFSETS = [
     "FIRST_VALUE(w) OVER (ORDER BY id)",
     f"LAST_VALUE(w) OVER (ORDER BY id {ALL_ROWS})",
     "FIRST_VALUE(v) OVER (ORDER BY id)",
+    # a NULL or Nullable default on a non-Nullable argument
+    "LAG(v, 1, NULL) OVER (ORDER BY id)",
+    "LEAD(v, 1, w) OVER (ORDER BY id)",
+    # a rewritten function (CONTAINS) inside one
+    "LAST_VALUE(CONTAINS(CAST(v AS VARCHAR), '2')) OVER (ORDER BY id)",
 ]
 
 
 @pytest.mark.parametrize("expr", OFFSETS)
 def test_window_offsets(expr, clickhouse, duck):
-    got = clickhouse.query(
-        f"SELECT id, {to_clickhouse(expr)} FROM {CH_OFFSET} ORDER BY id"
-    ).result_rows
-    expected = duck.execute(f"SELECT id, {expr} FROM {DUCK_OFFSET} ORDER BY id").fetchall()
-    assert [tuple(map(norm, r)) for r in got] == [tuple(map(norm, r)) for r in expected]
+    check_rows(expr, clickhouse, duck, CH_OFFSET, DUCK_OFFSET)
