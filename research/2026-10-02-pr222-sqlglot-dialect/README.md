@@ -58,12 +58,13 @@ uv pip install sqlglot==30.21.0 clickhouse-connect==1.9.0 pyyaml==6.0.3 "apache-
 | Code issues from the PR review that reproduce | 3 of 3 (`NOT IN` by string replacement, `CHARINDEX` third argument dropped, `APPROX_PERCENTILE` accuracy dropped) |
 
 Where ClickHouse rejects the generated SQL, or SQLGlot drops an argument,
-`evaluate.py` labels the cause from the parse tree: `parser` when only the
-default dialect fails, `generator` when SQLGlot knows every function in the
-expression and its ClickHouse generator gets it wrong, `unknown` when
-SQLGlot passes a function through by name. `parser` is defined for the pair
-default and `ossie` only; the `snowflake` column shows which catalog
-functions SQLGlot already models, read from its `unknown`.
+`evaluate.py` labels the cause: `parser` when only the default dialect fails,
+`unknown` when ClickHouse reports `UNKNOWN_FUNCTION` for a function SQLGlot
+passed through by name (`exp.Anonymous`), `generator` for any other
+rejection. Only syntax and analysis errors count as rejections; any other
+ClickHouse error (memory, timeout, missing table) voids the run. `parser` is
+defined for the pair default and `ossie` only; the `snowflake` column shows
+which catalog functions SQLGlot already models, read from its `unknown`.
 
 | Cause | default | `ossie` | `snowflake` |
 |---|---|---|---|
@@ -89,13 +90,14 @@ upstream so far:
 (merged, not yet released) fixes the DuckDB generator this project uses for
 expected values in tests. More in preparation.
 
-The Ossie dialect leaves six catalog functions `unknown`: `TO_DATE` in both
-forms, `TO_TIMESTAMP`, `IFF`, `ZEROIFNULL`, `NULLIFZERO`. The Snowflake
-dialect models all six. Five run on ClickHouse: `IFF`, `ZEROIFNULL` and
-`NULLIFZERO` become `CASE`, `TO_DATE` and `TO_TIMESTAMP` without a format
-become `CAST`. `TO_DATE` with a format becomes `STR_TO_TIME`, which ClickHouse
-lacks (`generator`). In the other rows of the `snowflake` column, `DATEADD`
-and `DATEDIFF` run (Snowflake puts the date part first, as the spec does),
+The Ossie dialect leaves six catalog samples `unknown`, covering five
+functions: `TO_DATE` (with and without a format), `TO_TIMESTAMP`, `IFF`,
+`ZEROIFNULL`, `NULLIFZERO`. The Snowflake dialect models all five. Five of
+the six samples run on ClickHouse: `IFF`, `ZEROIFNULL` and `NULLIFZERO`
+become `CASE`, `TO_DATE` and `TO_TIMESTAMP` without a format become `CAST`.
+`TO_DATE` with a format becomes `STR_TO_TIME`, which ClickHouse lacks
+(`generator`). In the other rows of the `snowflake` column, `DATEADD` and
+`DATEDIFF` run (Snowflake puts the date part first, as the spec does),
 `CURRENT_TIME` runs as `LOCALTIME`, and `DATE_PART('year', d)` becomes
 `EXTRACT('year' FROM d)`, which ClickHouse rejects, in all three samples; the
 rule counts these as `generator`, the string date part comes from the

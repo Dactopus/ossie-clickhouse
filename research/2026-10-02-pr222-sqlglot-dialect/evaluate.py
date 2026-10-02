@@ -2,39 +2,48 @@
 
 Every expression in corpus.yaml and in the TPC-DS model is parsed with
 SQLGlot's default dialect, with read="ossie" (the subject) and with
-read="snowflake" (whose function names the spec's catalog follows), generated
-as ClickHouse SQL and executed. Each result gets one label:
+read="snowflake" as a third reading, generated as ClickHouse SQL and
+executed. Each result gets one label:
 
   ok         ClickHouse runs it and SQLGlot dropped nothing.
   parser     default dialect only: it fails, the Ossie dialect runs. The
              default dialect reads the spec's syntax differently. Never
              assigned to snowflake: its column shows which catalog
              functions SQLGlot already models, read from its "unknown".
-  generator  SQLGlot knows every function in the expression (no
-             exp.Anonymous), yet its ClickHouse generator emits SQL that
-             ClickHouse rejects, or drops an argument (SQLGlot's
-             UnsupportedError).
-  unknown    ClickHouse rejects a function SQLGlot passes through by name
-             (exp.Anonymous). Mapping it is the implementation's work,
-             whatever the parser.
+  generator  ClickHouse rejects the SQL from SQLGlot's ClickHouse generator,
+             or SQLGlot drops an argument (its UnsupportedError), and the
+             rejection is not "unknown".
+  unknown    ClickHouse reports UNKNOWN_FUNCTION for a function SQLGlot
+             passed through by name (exp.Anonymous). Mapping it is the
+             implementation's work, whatever the parser.
+  error      ClickHouse failed for another reason (memory, timeout, missing
+             table, network). Not a finding: the run exits with status 1.
+
+ClickHouse "rejects" means an error whose name is in REJECTED.
 
 Where the SQL differs from the Ossie dialect's and both run, the full results
 are compared (sorted, NaN equal to NaN, CURRENT_* skipped); a difference is
 printed with the first differing row of the sorted results.
 
 Usage: python evaluate.py MODEL.yaml [--corpus corpus.yaml] [--url URL]
+
+MODEL is the TPC-DS reference model; the joins and groupings below are fixed
+for it.
 """
 
 import argparse
 import json
 import logging
 import os
+import re
+import sys
 from importlib.metadata import distribution
 from pathlib import Path
 
 import clickhouse_connect
 import sqlglot
 import yaml
+from clickhouse_connect.driver.exceptions import DatabaseError
 from ossie_sql import UnsupportedConstructError, normalize_identifier, validate_expression
 from sqlglot import exp
 from sqlglot.errors import ErrorLevel, UnsupportedError
@@ -59,8 +68,27 @@ GROUP = {
     "monthly_sales_change": "date_dim.d_year, date_dim.d_moy",
 }
 DIALECTS = {"default": None, "ossie": "ossie", "snowflake": "snowflake"}
+# ClickHouse error names for "analysed the SQL and refused it".
+REJECTED = {
+    "SYNTAX_ERROR",
+    "UNKNOWN_FUNCTION",
+    "UNKNOWN_IDENTIFIER",
+    "NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
+    "ILLEGAL_TYPE_OF_ARGUMENT",
+    "TYPE_MISMATCH",
+    "BAD_ARGUMENTS",
+}
 
 logging.getLogger("sqlglot").setLevel(logging.ERROR)
+
+
+def expression(obj):
+    """The expression in the dialect translate.py prefers; anything else stops the run."""
+    by_dialect = {d["dialect"]: d["expression"] for d in obj["expression"]["dialects"]}
+    for dialect in ("OSSIE_SQL_2026", "ANSI_SQL"):
+        if dialect in by_dialect:
+            return by_dialect[dialect]
+    sys.exit(f"{obj['name']}: no OSSIE_SQL_2026 or ANSI_SQL expression")
 
 
 def model_cases(path):
@@ -74,12 +102,12 @@ def model_cases(path):
         parts = d["source"].split(".")
         tables[d["name"]] = f"{parts[0]}.{parts[-1]}"  # db.schema.table -> db.table
         for f in d["fields"]:
-            e = f["expression"]["dialects"][0]["expression"]
+            e = expression(f)
             sql = f"SELECT {{}} FROM {tables[d['name']]}"
             yield "field", e, sql + " LIMIT 1", sql
     star = STAR.format(**tables)
     for mt in m["metrics"]:
-        e = mt["expression"]["dialects"][0]["expression"]
+        e = expression(mt)
         g = GROUP.get(mt["name"])
         sql = f"SELECT {g + ', ' if g else ''}{{}} AS v FROM {star}"
         sql += f" GROUP BY {g}" if g else ""
@@ -90,7 +118,7 @@ def model_cases(path):
 def main():
     here = Path(__file__).parent
     ap = argparse.ArgumentParser()
-    ap.add_argument("model", help="TPC-DS model YAML, e.g. tests/fixtures/tpcds.yaml")
+    ap.add_argument("model", help="the TPC-DS reference model, tests/fixtures/tpcds.yaml")
     ap.add_argument("--corpus", default=here / "corpus.yaml")
     ap.add_argument("--url", help="ClickHouse HTTP URL (default $OSSIE_CLICKHOUSE_URL)")
     args = ap.parse_args()
@@ -98,16 +126,25 @@ def main():
     url = args.url or os.environ.get("OSSIE_CLICKHOUSE_URL", "http://127.0.0.1:8123")
     ch = clickhouse_connect.get_client(dsn=url, autogenerate_session_id=False)
 
-    def run(sql):
+    errors = []
+
+    def query(sql):
+        """(rows, message, error name); the name is "error" unless ClickHouse rejected the SQL."""
         try:
-            ch.query(sql)
-            return ""
+            return ch.query(sql).result_rows, "", None
         except Exception as e:
-            return str(e).split("server response:")[-1].strip().splitlines()[0][:100]
+            lines = str(e).split("server response:")[-1].strip().splitlines()
+            message = lines[0] if lines else type(e).__name__
+            name = e.name if isinstance(e, DatabaseError) else None
+            if name not in REJECTED:
+                errors.append(f"{message[:100]}\n    in: {sql[:200]}")
+                return [], message, "error"
+            return [], message, name
 
     def result(sql):
-        rows = ch.query(sql).result_rows
-        return sorted((tuple("nan" if v != v else v for v in row) for row in rows), key=repr)
+        rows, message, name = query(sql)
+        rows = sorted((tuple("nan" if v != v else v for v in row) for row in rows), key=repr)
+        return rows, message if name else ""
 
     corpus = yaml.safe_load(Path(args.corpus).read_text())
     one_row = f"SELECT {{}} FROM {BASE}"
@@ -140,12 +177,16 @@ def main():
         except UnsupportedError as e:
             sql = tree.sql(dialect="clickhouse")
             dropped = f"dropped by SQLGlot: {str(e).splitlines()[0][:80]}"
-        err = run(template.format(sql))
+        _, err, name = query(template.format(sql))
+        if name == "error":
+            return "error", sql, err[:100]
         if not err and not dropped:
             return "ok", sql, ""
-        if err and tree.find(exp.Anonymous):
-            return "unknown", sql, err
-        return "generator", sql, err or dropped
+        missing = re.search(r"Function with name `([^`]+)`", err)
+        anonymous = {a.name.upper() for a in tree.find_all(exp.Anonymous)}
+        if name == "UNKNOWN_FUNCTION" and missing and missing.group(1).upper() in anonymous:
+            return "unknown", sql, err[:100]
+        return "generator", sql, err[:100] or dropped
 
     print("\n=== 1. ClickHouse SQL per dialect, executed (only rows where something differs)")
     labels = {d: [] for d in DIALECTS}
@@ -168,10 +209,18 @@ def main():
                 or "CURRENT_" in e.upper()
             ):
                 continue
-            mine, theirs = result(compare.format(r[d][1])), result(compare.format(r["ossie"][1]))
-            if mine != theirs:
+            (mine, err), (theirs, err2) = (
+                result(compare.format(r[d][1])),
+                result(compare.format(r["ossie"][1])),
+            )
+            if err or err2:
+                mark[d] = f"\n{'':26s}!! comparison failed: {(err or err2)[:100]}"
+            elif mine != theirs:
                 differs[d] += 1
-                row = next((a, b) for a, b in zip(mine, theirs, strict=False) if a != b)
+                row = next(
+                    ((a, b) for a, b in zip(mine, theirs, strict=False) if a != b),
+                    (f"{len(mine)} rows", f"{len(theirs)} rows"),
+                )
                 mark[d] = f"\n{'':26s}!! result differs from ossie, first row: {row[0]} vs {row[1]}"
         if len({sql for _, sql, _ in r.values()}) == 1 and {lb for lb, *_ in r.values()} == {"ok"}:
             continue
@@ -246,6 +295,12 @@ def main():
         f"  {[normalize_identifier(i) for i in t.find_all(exp.Identifier)]}"
         f" rendered: {t.sql(dialect='clickhouse')}"
     )
+
+    if errors:
+        print(f"\n=== {len(errors)} ClickHouse errors that are not SQL rejections; the run is void")
+        for error in errors:
+            print(f"  {error}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
