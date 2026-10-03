@@ -25,6 +25,12 @@ many-to-one and cannot multiply fact rows; extra columns, such as a
 `tenant_id` next to the key, only narrow the match. A dimension dataset
 without a declared key is unreachable.
 
+The planner trusts the declared key; ClickHouse does not enforce
+uniqueness. In a multi-tenant schema an id is often unique only within a
+tenant, and then the key is `[tenant_id, customer_id]`, not
+`[customer_id]`. Declared too narrow, it lets a relationship on
+`customer_id` alone through, and that join multiplies rows.
+
 ```yaml
 datasets:
   - name: item

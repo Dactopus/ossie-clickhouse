@@ -102,7 +102,9 @@ superset of a key, is how the reference validator reads it
 matters for multi-tenant schemas joined on `(tenant_id, customer_id)`
 with the key declared as `customer_id`. Such a join to a single-key
 dictionary stays a `LEFT JOIN`: `dictGetOrNull` by the key alone would
-ignore the extra columns.
+ignore the extra columns. The cost is memory: ClickHouse (checked on
+26.9) runs a join on more than the dictionary key as a hash join that
+loads the whole dictionary, not as a direct key lookup.
 
 Two points are stricter than that validator. A relationship whose
 `to_columns` cover no key is refused, where the validator only warns. A
