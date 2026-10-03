@@ -14,7 +14,8 @@ a minor release may change the Python API.
   validator reads the spec (apache/ossie#330). A join on
   `(tenant_id, customer_id)` to customers keyed by `customer_id` used to
   fail with "not many-to-one". A target with no declared key gets its own
-  error that says so. `validate` now reports both kinds of relationship.
+  error that says so. `validate` now fails on both kinds of relationship,
+  so a model that passed it before may not.
 
 - NULLs sort last in both directions, in window `ORDER BY` inside model
   expressions and in a query's `order_by`. Ascending orderings used to put
