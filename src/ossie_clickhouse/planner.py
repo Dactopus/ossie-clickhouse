@@ -152,8 +152,25 @@ def unanswerable_metrics(model: OssieDocument) -> dict[str, str]:
     return out
 
 
+def _same_rows_hint(q: Query) -> str:
+    """How to ask a second metric for the rows of the first answer, such as its top 5."""
+    if len(q.metrics) < 2 or not q.dimensions:
+        return ""
+    f = q.dimensions[0]
+    return (
+        "; for the second metric over the rows of the first answer, such as its top 5, "
+        f'filter the second question with "{f} IN (...)" listing the values that answer '
+        f'returned, or with the single filter "{f} IN (...) OR {f} IS NULL" if one is NULL'
+    )
+
+
 def _check_rows(
-    label: str, inputs: Inputs, root: str, touched: dict[str, set[str]], one_to_one: set[str]
+    label: str,
+    inputs: Inputs,
+    root: str,
+    touched: dict[str, set[str]],
+    one_to_one: set[str],
+    q: Query,
 ) -> None:
     """Refuse an aggregate expression whose answer would be about other rows than the root's.
 
@@ -168,8 +185,9 @@ def _check_rows(
             f"{label} aggregates {home} rows, but this question is answered over "
             f"{root} rows (because of {', '.join(by)}): it would see only {home} "
             f"rows that {root} references{', once per reference' if repeated else ''}. "
-            f"Ask for metrics of different datasets in separate questions, and filter or "
-            f"group a {home} metric only by fields of {home} or of datasets {home} joins to"
+            f"Ask for metrics of different datasets in separate questions{_same_rows_hint(q)}, "
+            f"and filter or group a {home} metric only by fields of {home} or of datasets "
+            f"{home} joins to"
         )
     if repeated:
         agg, joined = repeated[0][0].sql("clickhouse"), " and ".join(sorted(repeated[0][1]))
@@ -330,7 +348,7 @@ class Planner:
             if len(rs) == 1 and covers_key(rs[0].from_columns, ds)
         }
 
-    def _root(self, used: set[str]) -> OssieDataset:
+    def _root(self, used: set[str], q: Query) -> OssieDataset:
         """The dataset that has direct relationships to every other used dataset."""
         candidates = []
         for name in sorted(used):
@@ -346,8 +364,14 @@ class Planner:
         if len(candidates) == 1:
             return candidates[0]
         if not candidates:
+            split = (
+                f". Ask for metrics of different datasets in separate questions{_same_rows_hint(q)}"
+                if len(q.metrics) > 1
+                else ""
+            )
             raise PlanError(
                 f"datasets {sorted(used)} are not joined by direct relationships from one root"
+                + split
             )
         raise PlanError(f"ambiguous root dataset among {[c.name for c in candidates]}")
 
@@ -419,10 +443,10 @@ class Planner:
             checked.append((label, _aggregate_inputs(tree)))
 
         used = set().union(*touched.values())
-        root = self._root(used)
+        root = self._root(used, q)
         one_to_one = self._one_to_one(root.name)
         for label, inputs in checked:
-            _check_rows(label, inputs, root.name, touched, one_to_one)
+            _check_rows(label, inputs, root.name, touched, one_to_one, q)
         sel = exp.select(*selects).from_(self._table(root))
         dict_keys: dict[str, exp.Expression] = {}  # dictionary dataset -> key expression
         for name in sorted(used - {root.name}):

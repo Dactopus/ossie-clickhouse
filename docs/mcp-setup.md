@@ -80,7 +80,11 @@ select it and filter the rows. `order_by` names metrics or dimensions,
 `"name desc"` for descending; empty means the first metric descending.
 Rows without a value come last either way, so `limit` may cut them off.
 The server's `instructions` tell the agent to start with `list_model`,
-never to write SQL, and never to add up or rank rows itself.
+never to write SQL, never to add up or rank rows itself, and to state only
+numbers a query returned. They end with the model's own
+`ai_context.instructions`, so an agent that starts with `search_model`
+still gets them; `list_model` repeats them for clients that ignore server
+instructions.
 
 ## Access
 
