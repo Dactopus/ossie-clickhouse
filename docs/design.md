@@ -104,10 +104,11 @@ with the key declared as `customer_id`. Such a join to a single-key
 dictionary stays a `LEFT JOIN`: `dictGetOrNull` by the key alone would
 ignore the extra columns.
 
-Two points are stricter than that validator, which only warns. A
-relationship whose `to_columns` cover no key is refused, not used with a
-warning. A target with no declared key is refused too, where the
-validator skips the check: nothing then rules out fan-out.
+Two points are stricter than that validator. A relationship whose
+`to_columns` cover no key is refused, where the validator only warns. A
+target with no declared key is refused too, where the validator skips the
+check: nothing then rules out fan-out. The model still loads; questions
+that need such a join fail, and `validate` reports the relationship.
 
 ## Remote MCP server, designed, not built
 

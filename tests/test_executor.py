@@ -66,6 +66,21 @@ def test_dictionary_key_column_is_the_join_key(ex):
     assert set(r.rows) == {(None, 30.0), ("FR", 20.0), ("DE", 15.0)}
 
 
+def test_dictionary_joined_on_superset_of_its_key(ex, tmp_path):
+    # The extra column narrows the match: no order's code equals a country name,
+    # so every row is unmatched. dictGet by the key alone would find DE and FR.
+    p = tmp_path / "superset.yaml"
+    text = FIXTURE.read_text().replace(
+        "from_columns: [country_code]", "from_columns: [country_code, country_code]"
+    )
+    p.write_text(text.replace("to_columns: [code]", "to_columns: [code, name]"))
+    r = Executor(ex.client, load_model(p)).execute(
+        Query(metrics=("revenue",), dimensions=("country.name",))
+    )
+    assert "LEFT JOIN ossie_test.country AS country" in r.sql and "dictGet" not in r.sql
+    assert r.rows == [(None, 65.0)]
+
+
 def test_nan_and_inf_become_none(ex):
     r = ex.execute(Query(metrics=("spread",), dimensions=("orders.order_id",), limit=1))
     assert r.rows[0][1] is None

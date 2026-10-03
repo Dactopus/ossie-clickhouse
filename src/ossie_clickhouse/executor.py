@@ -17,6 +17,7 @@ from ossie import OssieDataset, OssieDocument
 from sqlglot import exp
 
 from ossie_clickhouse.access import Hidden, Policy, restrict
+from ossie_clickhouse.model import declared_keys
 from ossie_clickhouse.planner import Catalog, PlanError, Planner, Query, TableInfo, source_table
 from ossie_clickhouse.translate import parse, pick_expression, untranslatable
 
@@ -167,7 +168,7 @@ class Executor:
                 )
                 continue
             needed: dict[str, str] = {}
-            for key in [ds.primary_key or [], *(ds.unique_keys or [])]:
+            for key in declared_keys(ds):
                 needed.update({c: "key" for c in key})
             for f, tree in self._parsed_fields(ds):
                 for c in tree.find_all(exp.Column):

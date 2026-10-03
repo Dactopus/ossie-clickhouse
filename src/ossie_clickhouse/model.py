@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 import yaml
-from ossie import OssieDialect, OssieDocument
+from ossie import OssieDataset, OssieDialect, OssieDocument, OssieRelationship
 from pydantic import ValidationError
 
 SUPPORTED_VERSION = "0.2.0.dev0"
@@ -81,6 +81,36 @@ def check_model(doc: OssieDocument) -> list[str]:
                     f"relationship {r.name!r}: {side} dataset {ds_name!r} does not exist"
                 )
     return problems
+
+
+def declared_keys(ds: OssieDataset) -> list[list[str]]:
+    """The primary key and unique keys of ``ds``, empty ones dropped."""
+    return [k for k in [ds.primary_key, *(ds.unique_keys or [])] if k]
+
+
+def join_problem(r: OssieRelationship, target: OssieDataset) -> str | None:
+    """Why ``r`` cannot be joined as many-to-one, or None when it can."""
+    keys = declared_keys(target)
+    if not keys:
+        return (
+            f"cannot prove relationship {r.name!r} is many-to-one: {target.name!r} declares "
+            "no primary_key or unique_keys; declare the key its to_columns cover"
+        )
+    # Any superset of a unique key is unique too, so the join cannot fan out.
+    cols = {c.upper() for c in r.to_columns}
+    if not any(cols >= {c.upper() for c in k} for k in keys):
+        return (
+            f"relationship {r.name!r} is not many-to-one: to_columns "
+            f"{r.to_columns} do not cover a primary or unique key of {target.name!r}"
+        )
+    return None
+
+
+def join_problems(doc: OssieDocument) -> list[str]:
+    """join_problem() for every relationship; the planner refuses these at query time."""
+    datasets = {d.name: d for d in doc.datasets}
+    found = (join_problem(r, datasets[r.to]) for r in doc.relationships or [] if r.to in datasets)
+    return [p for p in found if p]
 
 
 def _duplicates(kind: str, names: list[str]) -> list[str]:
