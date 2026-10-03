@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
 
-from ossie_clickhouse.model import join_problem
-from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree
+from ossie_clickhouse.model import covers_key, join_problem
+from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, untranslatable
 
 
 class PlanError(ValueError):
@@ -62,62 +62,87 @@ def source_table(source: str) -> exp.Table:
 # Aggregates whose value does not change when an input row repeats. Only these
 # may read a joined dataset's columns on their own: each row of a many-to-one
 # target repeats once per root row that references it.
-_REPEAT_SAFE = (exp.Min, exp.Max, exp.AnyValue, exp.LogicalAnd, exp.LogicalOr, exp.ApproxDistinct)
+_REPEAT_SAFE = {
+    exp.Min: "MIN",
+    exp.Max: "MAX",
+    exp.AnyValue: "ANY_VALUE",
+    exp.LogicalAnd: "BOOL_AND",
+    exp.LogicalOr: "BOOL_OR",
+    exp.ApproxDistinct: "APPROX_COUNT_DISTINCT",
+}
+_REPEAT_SAFE_NAMES = ", ".join(_REPEAT_SAFE.values()) + " and DISTINCT"
+
+Inputs = list[tuple[exp.AggFunc, set[str]]]
 
 
 def _repeat_safe(agg: exp.AggFunc) -> bool:
-    return isinstance(agg, _REPEAT_SAFE) or isinstance(agg.this, exp.Distinct)
+    return isinstance(agg, tuple(_REPEAT_SAFE)) or isinstance(agg.this, exp.Distinct)
 
 
-def _aggregate_inputs(tree: exp.Expression) -> list[tuple[exp.AggFunc, set[str]]]:
-    """Each aggregate that reads joined rows, with the datasets of the columns it reads.
+def _aggregate_inputs(tree: exp.Expression) -> Inputs:
+    """Each aggregate over joined rows, with the datasets of the columns it reads
+    (none for COUNT(*)).
 
     A column counts for its nearest aggregate only, so SUM(SUM(x)) OVER () reads x
-    once. The function of an OVER clause reads grouped rows, not joined ones, and
-    PARTITION BY / ORDER BY columns are grouping keys: neither counts."""
-    found: dict[int, tuple[exp.AggFunc, set[str]]] = {}
+    once, and a FILTER (WHERE ...) column for the aggregate it filters. The function
+    of an OVER clause reads grouped rows, not joined ones, and PARTITION BY / ORDER BY
+    columns are grouping keys: neither counts."""
+    found = {id(a): (a, set()) for a in tree.find_all(exp.AggFunc) if not _window_function(a)}
     for col in tree.find_all(exp.Column):
         node = col.parent
-        while node is not None and not (
-            isinstance(node, exp.AggFunc) and not _window_function(node)
-        ):
-            node = node.parent
+        while node is not None and id(node) not in found:
+            filtered = isinstance(node, exp.Filter) and id(node.this) in found
+            node = node.this if filtered else node.parent
         if node is not None:
-            found.setdefault(id(node), (node, set()))[1].add(col.table)
+            found[id(node)][1].add(col.table)
     return list(found.values())
 
 
 def _window_function(agg: exp.AggFunc) -> bool:
     parent = agg.parent
-    if isinstance(parent, exp.RespectNulls | exp.IgnoreNulls):
+    while isinstance(parent, exp.RespectNulls | exp.IgnoreNulls | exp.Filter):
         parent = parent.parent
     return isinstance(parent, exp.Window)
 
 
-def _repeated(tree: exp.Expression, root: str) -> tuple[exp.AggFunc, set[str]] | None:
-    """A duplicate-sensitive aggregate that reads only datasets other than ``root``."""
-    for agg, datasets in _aggregate_inputs(tree):
-        if root not in datasets and not _repeat_safe(agg):
-            return agg, datasets
-    return None
+def _homes(inputs: Inputs) -> list[str]:
+    return sorted({d for _, ds in inputs for d in ds})
+
+
+def _repeated(inputs: Inputs, root: str, one_to_one: set[str]) -> Inputs:
+    """Duplicate-sensitive aggregates that read only datasets whose rows repeat over ``root``'s."""
+    return [
+        (agg, ds)
+        for agg, ds in inputs
+        if ds and root not in ds and not ds <= one_to_one and not _repeat_safe(agg)
+    ]
 
 
 def unanswerable_metrics(model: OssieDocument) -> dict[str, str]:
     """Metrics the planner refuses in every question, with why.
 
-    A duplicate-sensitive aggregate over each of two datasets: whichever is
-    the root, the other one's rows repeat."""
+    One that names an unknown field or reads no column, and one with a
+    duplicate-sensitive aggregate over each of two datasets: whichever is the
+    root, the other one's rows repeat. Untranslatable metrics are reported by
+    untranslatable()."""
     planner = Planner(model)
+    skip = set(untranslatable(model)[1])
     out = {}
     for m in model.metrics or []:
+        if m.name in skip:
+            continue
         try:
             # Through the planner, so names are the model's spelling, as in plan().
-            tree = rewrite_tree(planner.resolve(pick_expression(m.expression), set()))
+            inputs = _aggregate_inputs(planner._metric_tree(m, set()))
+        except PlanError as e:
+            out[m.name] = str(e)
+            continue
         except ValueError:
-            continue  # untranslatable, reported as such
-        homes = sorted({d for _, ds in _aggregate_inputs(tree) for d in ds})
-        if homes and all(_repeated(tree, root) for root in homes):
-            aggs = ", ".join(_repeated(tree, root)[0].sql("clickhouse") for root in homes)
+            continue  # reads an untranslatable field, reported as such
+        homes = _homes(inputs)
+        refused = [_repeated(inputs, root, planner._one_to_one(root)) for root in homes]
+        if homes and all(refused):
+            aggs = ", ".join(r[0][0].sql("clickhouse") for r in refused)
             out[m.name] = (
                 f"aggregates columns of {' and '.join(homes)} separately with functions that "
                 f"count repeated rows ({aggs}); whichever "
@@ -127,30 +152,33 @@ def unanswerable_metrics(model: OssieDocument) -> dict[str, str]:
     return out
 
 
-def _check_rows(label: str, tree: exp.Expression, root: str, touched: dict[str, set[str]]) -> None:
+def _check_rows(
+    label: str, inputs: Inputs, root: str, touched: dict[str, set[str]], one_to_one: set[str]
+) -> None:
     """Refuse an aggregate expression whose answer would be about other rows than the root's.
 
     Joins are many-to-one, so a joined dataset's rows repeat per root row
     and include only those the root references."""
-    homes = sorted({d for _, ds in _aggregate_inputs(tree) for d in ds})
+    homes = _homes(inputs)
+    repeated = _repeated(inputs, root, one_to_one)
     if homes and root not in homes:
         by = [item for item, ds in touched.items() if root in ds and item != label] or [label]
         home = " and ".join(homes)
         raise PlanError(
             f"{label} aggregates {home} rows, but this question is answered over "
-            f"{root} rows (because of {', '.join(by)}): it would count only {home} "
-            f"rows that {root} references, once per reference. Ask for metrics of "
-            f"different datasets in separate questions, and filter or group a {home} "
-            f"metric only by fields of {home} or of datasets {home} joins to"
+            f"{root} rows (because of {', '.join(by)}): it would see only {home} "
+            f"rows that {root} references{', once per reference' if repeated else ''}. "
+            f"Ask for metrics of different datasets in separate questions, and filter or "
+            f"group a {home} metric only by fields of {home} or of datasets {home} joins to"
         )
-    repeated = _repeated(tree, root)
     if repeated:
-        agg, joined = repeated[0].sql("clickhouse"), " and ".join(sorted(repeated[1]))
+        agg, joined = repeated[0][0].sql("clickhouse"), " and ".join(sorted(repeated[0][1]))
         raise PlanError(
             f"{label} applies {agg} to {joined} columns alone over {root} rows, "
             f"so each {joined} row would count once per {root} row that references it. "
-            "Only MIN, MAX, ANY_VALUE, BOOL_AND, BOOL_OR and DISTINCT aggregates may "
-            "read a joined dataset on their own; this version cannot answer it"
+            f"Only {_REPEAT_SAFE_NAMES} aggregates may read a joined dataset on their own, "
+            f"unless it is joined on a key of {root} (one row each); "
+            "this version cannot answer it"
         )
 
 
@@ -221,7 +249,7 @@ class Planner:
                 return node
             if not node.table:
                 if metrics and node.name.upper() in self._metrics:
-                    return self.resolve(pick_expression(self.metric(node.name).expression), used)
+                    return self._metric_tree(self.metric(node.name), used)
                 hint = ""
                 if metrics:
                     names = [x.name for x in self.model.metrics or []] + [
@@ -234,6 +262,25 @@ class Planner:
             return self._field_expr(ds, f)
 
         return tree.transform(inline)
+
+    def _metric_tree(self, m, used: set[str]) -> exp.Expression:
+        """A metric's expression, resolved and rewritten for ClickHouse.
+
+        Refuses an aggregate that reads no column (COUNT(*)) unless the metric's
+        other aggregates name the one dataset whose rows it counts: otherwise it
+        would count rows of whichever dataset a question is answered over."""
+        tree = rewrite_tree(self.resolve(pick_expression(m.expression), used))
+        if len(self.model.datasets) > 1:
+            inputs = _aggregate_inputs(tree)
+            unnamed = [agg for agg, ds in inputs if not ds]
+            if unnamed and len(_homes(inputs)) != 1:
+                raise PlanError(
+                    f"metric {m.name!r} uses {unnamed[0].sql('clickhouse')}, which reads no "
+                    "column, so it would count rows of whichever dataset a question is "
+                    "answered over; count a column of the dataset it means, such as "
+                    "COUNT(dataset.key)"
+                )
+        return tree
 
     def _field_expr(self, ds: OssieDataset, f: OssieField) -> exp.Expression:
         """A field's expression with its bare columns qualified by the dataset alias."""
@@ -270,6 +317,19 @@ class Planner:
             raise PlanError(problem)
         return r
 
+    def _one_to_one(self, root: str) -> set[str]:
+        """Datasets joined from ``root`` on a key of ``root``: none of their rows repeats."""
+        found: dict[str, list[OssieRelationship]] = {}
+        for r in self.model.relationships or []:
+            if r.from_dataset.upper() == root.upper() and r.to.upper() in self._datasets:
+                found.setdefault(r.to.upper(), []).append(r)
+        ds = self.dataset(root)
+        return {
+            self._datasets[to].name
+            for to, rs in found.items()
+            if len(rs) == 1 and covers_key(rs[0].from_columns, ds)
+        }
+
     def _root(self, used: set[str]) -> OssieDataset:
         """The dataset that has direct relationships to every other used dataset."""
         candidates = []
@@ -298,7 +358,7 @@ class Planner:
             raise PlanError("a query needs at least one metric or dimension")
         # Query item ("metric 'x'") -> datasets it reads: picks the root, explains it.
         touched: dict[str, set[str]] = {}
-        checked: list[tuple[str, exp.Expression]] = []  # aggregate expressions, rewritten
+        checked: list[tuple[str, Inputs]] = []  # aggregate expressions
         selects: list[exp.Expression] = []
         group: list[exp.Expression] = []
         seen_aliases: set[str] = set()  # upper-cased: ORDER BY resolves names case-insensitively
@@ -315,23 +375,22 @@ class Planner:
         for ref in q.dimensions:
             ds, f = self.field_ref(ref)
             touched.setdefault(f"dimension {ref!r}", set()).add(ds.name)
-            e = self._field_expr(ds, f)
+            e = rewrite_tree(self._field_expr(ds, f))
             selects.append(e.as_(alias(f.name)))
             group.append(e.copy())
 
         for name in q.metrics:
             m = self.metric(name)
             label = f"metric {m.name!r}"
-            tree = self.resolve(pick_expression(m.expression), touched.setdefault(label, set()))
-            checked.append((label, rewrite_tree(tree)))
+            tree = self._metric_tree(m, touched.setdefault(label, set()))
+            checked.append((label, _aggregate_inputs(tree)))
             selects.append(tree.as_(alias(m.name)))
 
         where: list[exp.Expression] = []
         having: list[exp.Expression] = []  # filters over aggregates or metric names
-        # Rewrite before inspecting: APPROX_PERCENTILE is a plain function name to
-        # SQLGlot and an aggregate only after rewrite. rewrite is idempotent, so
-        # the final pass over the whole SELECT leaves these nodes as they are.
-        grouped = {rewrite_tree(e).sql() for e in group}
+        # Every part is rewritten once, before inspecting: APPROX_PERCENTILE is a
+        # plain function name to SQLGlot and an aggregate only after rewrite.
+        grouped = {e.sql() for e in group}
         for f in q.filters:
             label = f"filter {f!r}"
             tree = self.resolve(f, touched.setdefault(label, set()), metrics=True)
@@ -357,12 +416,13 @@ class Planner:
                         "dimension of this query; add it to dimensions or put it in its own filter"
                     )
             having.append(tree)
-            checked.append((label, tree))
+            checked.append((label, _aggregate_inputs(tree)))
 
         used = set().union(*touched.values())
         root = self._root(used)
-        for label, tree in checked:
-            _check_rows(label, tree, root.name, touched)
+        one_to_one = self._one_to_one(root.name)
+        for label, inputs in checked:
+            _check_rows(label, inputs, root.name, touched, one_to_one)
         sel = exp.select(*selects).from_(self._table(root))
         dict_keys: dict[str, exp.Expression] = {}  # dictionary dataset -> key expression
         for name in sorted(used - {root.name}):
@@ -403,7 +463,7 @@ class Planner:
         sel.set(
             "settings", [exp.EQ(this=exp.var("join_use_nulls"), expression=exp.Literal.number(1))]
         )
-        return rewrite_tree(sel)
+        return sel
 
     def _order(
         self, order_by: tuple[str, ...], q: Query, selects: list[exp.Expression]

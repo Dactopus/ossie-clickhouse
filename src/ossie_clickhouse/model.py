@@ -88,6 +88,13 @@ def declared_keys(ds: OssieDataset) -> list[list[str]]:
     return [k for k in [ds.primary_key, *(ds.unique_keys or [])] if k]
 
 
+def covers_key(columns: list[str], ds: OssieDataset) -> bool:
+    """Whether ``columns`` include a primary or unique key of ``ds``: then no two
+    rows share their values (any superset of a unique key is unique too)."""
+    cols = {c.upper() for c in columns}
+    return any(cols >= {c.upper() for c in k} for k in declared_keys(ds))
+
+
 def join_problem(r: OssieRelationship, target: OssieDataset) -> str | None:
     """Why ``r`` cannot be joined as many-to-one, or None when it can."""
     keys = declared_keys(target)
@@ -96,9 +103,7 @@ def join_problem(r: OssieRelationship, target: OssieDataset) -> str | None:
             f"cannot prove relationship {r.name!r} is many-to-one: {target.name!r} declares "
             "no primary_key or unique_keys; declare the key its to_columns cover"
         )
-    # Any superset of a unique key is unique too, so the join cannot fan out.
-    cols = {c.upper() for c in r.to_columns}
-    if not any(cols >= {c.upper() for c in k} for k in keys):
+    if not covers_key(r.to_columns, target):
         return (
             f"relationship {r.name!r} is not many-to-one: to_columns "
             f"{r.to_columns} do not cover a primary or unique key of {target.name!r}"

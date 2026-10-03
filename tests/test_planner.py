@@ -485,7 +485,29 @@ def test_every_metric_executes(metric, tpcds):
 
 
 def _with_metrics(**expressions: str) -> Planner:
+    """The fixture with extra metrics and store_extra, a one-to-one extension of store."""
+
     def mutate(m):
+        store = next(d for d in m["datasets"] if d["name"] == "store")
+        m["datasets"].append({**store, "name": "store_extra"})
+        m["relationships"].append(
+            {
+                "name": "store_to_extra",
+                "from": "store",
+                "to": "store_extra",
+                "from_columns": ["s_store_sk"],
+                "to_columns": ["s_store_sk"],
+            }
+        )
+        m["relationships"].append(
+            {
+                "name": "sales_to_extra",
+                "from": "store_sales",
+                "to": "store_extra",
+                "from_columns": ["ss_store_sk"],
+                "to_columns": ["s_store_sk"],
+            }
+        )
         for name, e in expressions.items():
             m["metrics"].append(
                 {
@@ -531,6 +553,26 @@ def _with_metrics(**expressions: str) -> Planner:
             Query(metrics=("sales_per_nonzero_median_staff",)),
             "applies quantileTDigest(0.5)(store.s_number_employees)",
         ),
+        # COUNT(*) alone counts whatever rows the question is about: stores here,
+        # sales next to total_sales.
+        (
+            Query(metrics=("cnt",), dimensions=("store.s_state",)),
+            "metric 'cnt' uses COUNT(*), which reads no column",
+        ),
+        (
+            Query(metrics=("total_sales",), filters=("cnt > 1",)),
+            "metric 'cnt' uses COUNT(*), which reads no column",
+        ),
+        # A FILTER column counts for its aggregate: this counts sales once per store.
+        (
+            Query(metrics=("total_sales", "tn_stores")),
+            "metric 'tn_stores' aggregates store rows",
+        ),
+        # Only the root's key makes a join one-to-one: sales repeat per store_extra row.
+        (
+            Query(metrics=("extra_staff",), dimensions=("store.s_state",)),
+            "metric 'extra_staff' applies SUM(store_extra.s_number_employees)",
+        ),
         (
             Query(metrics=("sales_per_median_staff",)),
             "metric 'sales_per_median_staff' applies "
@@ -546,6 +588,9 @@ def test_refuses_aggregates_over_other_rows_than_the_root(query, message):
         "APPROX_PERCENTILE(store.s_number_employees, 0.5)",
         sales_per_nonzero_median_staff="SUM(store_sales.ss_ext_sales_price) / "
         "NULLIFZERO(APPROX_PERCENTILE(store.s_number_employees, 0.5))",
+        cnt="COUNT(*)",
+        tn_stores="COUNT(*) FILTER (WHERE store.s_state = 'TN')",
+        extra_staff="SUM(store_sales.ss_ext_sales_price) / SUM(store_extra.s_number_employees)",
     )
     with pytest.raises(PlanError) as e:
         planner.sql(query)
@@ -561,7 +606,10 @@ def test_refuses_aggregates_over_other_rows_than_the_root(query, message):
         (("monthly_sales_change",), ("date_dim.d_year", "date_dim.d_moy")),
         (("revenue_at_list_price",), ("store.s_state",)),  # one value per root row
         (("sales_per_largest_staff",), ("item.i_brand",)),  # MAX ignores repeats
-        (("sales_count",), ("store.s_state",)),  # COUNT(*) counts root rows
+        # COUNT(*) next to an aggregate that names its dataset counts that dataset's rows.
+        (("average_sale",), ("store.s_state",)),
+        (("bulk_sales",), ("store.s_state",)),  # FILTER reads the root
+        (("staff_per_extra",), ("store.s_state",)),  # store_extra rows do not repeat
     ],
 )
 def test_allows_aggregates_that_read_root_rows(metrics, dimensions):
@@ -569,7 +617,9 @@ def test_allows_aggregates_that_read_root_rows(metrics, dimensions):
         revenue_at_list_price="SUM(store_sales.ss_quantity * item.i_current_price)",
         sales_per_largest_staff="SUM(store_sales.ss_ext_sales_price) / "
         "MAX(store.s_number_employees)",
-        sales_count="COUNT(*)",
+        average_sale="SUM(store_sales.ss_ext_sales_price) / COUNT(*)",
+        bulk_sales="COUNT(*) FILTER (WHERE store_sales.ss_quantity > 50)",
+        staff_per_extra="SUM(store.s_number_employees) / SUM(store_extra.s_number_employees)",
     )
     planner.sql(Query(metrics=metrics, dimensions=dimensions))
 
@@ -582,6 +632,22 @@ def test_unanswerable_metrics():
     )
     assert "margin" not in unanswerable_metrics(planner.model)
     assert "SUM(store.s_number_employees)" in unanswerable_metrics(MODEL)["store_productivity"]
+    planner = _with_metrics(
+        typo="SUM(store.s_number_employes)",
+        cnt="COUNT(*)",
+        one_to_one="SUM(store.s_number_employees) / SUM(store_extra.s_number_employees)",
+    )
+    found = unanswerable_metrics(planner.model)
+    assert "unknown field 'store.s_number_employes'" in found["typo"]
+    assert "uses COUNT(*), which reads no column" in found["cnt"]
+    assert "one_to_one" not in found
+
+
+def test_unanswerable_metrics_are_hidden(tpcds):
+    from ossie_clickhouse.executor import Executor
+
+    names = [m.name for m in Executor(tpcds, MODEL).model.metrics]
+    assert "store_productivity" not in names and "total_sales" in names
 
 
 def test_nested_rewrite_in_a_metric():

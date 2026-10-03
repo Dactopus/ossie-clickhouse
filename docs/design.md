@@ -129,16 +129,26 @@ The planner refuses both after it picks the root, on the rewritten tree
 
 - An aggregate whose argument reads joined datasets and no root column is
   refused unless repeats cannot change it (`MIN`, `MAX`, `ANY_VALUE`,
-  `BOOL_AND`, `BOOL_OR`, `DISTINCT`, approximate distinct counts).
+  `BOOL_AND`, `BOOL_OR`, `DISTINCT`, `APPROX_COUNT_DISTINCT`), or every
+  dataset it reads is joined on a key of the root: a one-to-one extension
+  table, whose rows a root row references at most once.
   Everything else, percentiles included, counts as repeat-sensitive. A
   mixed argument such as `SUM(qty * price)` is one value per root row and
   passes; `SUM(CASE WHEN root.x THEN joined.y END)` passes too, though it
   repeats `joined.y`: the per-row expression is the author's.
 - An aggregate expression that reads no root column at all is refused even
   when repeat-safe: it would be about the joined rows the root references.
-  `COUNT(*)` reads no column and counts root rows.
+  A one-to-one join does not lift this: the target's unreferenced rows are
+  still missing.
+- A metric with an aggregate that reads no column (`COUNT(*)`, `COUNT(1)`)
+  is refused unless its other aggregates read exactly one dataset. Alone,
+  it counts the rows of whatever the question is about: stores when asked
+  by `store.s_state`, sales next to `total_sales`. In `SUM(sales.amount) /
+  COUNT(*)` it counts sales, the only dataset the root can be. A model
+  with one dataset is exempt, and so is a filter written in the question.
 
-Only columns inside an aggregate's argument count. A window function reads
+Only columns inside an aggregate's argument or its `FILTER (WHERE ...)`
+count. A window function reads
 grouped rows, and its `PARTITION BY` and `ORDER BY` columns are grouping
 keys. The check covers selected metrics and aggregate filters, including
 metrics named in a filter. The error names what made the root (a metric,
@@ -154,9 +164,10 @@ dataset, which would replace guessing the home from the expression.
 Answering several facts in one question (each metric from its own root,
 joined on the dimensions) waits for demand.
 
-A metric that refuses in every question, a repeat-sensitive aggregate over
-each of two datasets, stays visible to agents and is reported by
-`validate`.
+A metric that refuses in every question (a repeat-sensitive aggregate over
+each of two datasets, a bare `COUNT(*)`, an unknown field) is hidden from
+agents like an untranslatable one, since every attempt would cost a turn,
+and is reported by `validate`.
 
 ## Remote MCP server, designed, not built
 

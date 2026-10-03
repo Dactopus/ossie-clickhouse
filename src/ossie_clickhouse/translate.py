@@ -325,7 +325,9 @@ def rewrite(node: exp.Expression) -> exp.Expression:
     # and skips NULLs in first_value / last_value. A Nullable argument also lets a
     # NULL or Nullable default through (ClickHouse wants the argument's type).
     if isinstance(node, exp.Lag | exp.Lead | exp.NthValue):
-        node.set("this", _f("toNullable", node.this))
+        # Idempotent: a metric inlined into a filter is rewritten again with it.
+        if not (isinstance(node.this, exp.Anonymous) and node.this.name == "toNullable"):
+            node.set("this", _f("toNullable", node.this))
         return node
     if isinstance(node, exp.FirstValue | exp.LastValue) and not isinstance(
         node.parent, exp.RespectNulls | exp.IgnoreNulls

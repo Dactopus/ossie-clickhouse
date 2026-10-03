@@ -40,7 +40,13 @@ a minor release may change the Python API.
   staff once per sale; it is now refused in every question, and
   `validate` reports it, so a model that passed `validate` before may not.
   Repeat-safe aggregates (`MIN`, `MAX`, `DISTINCT` and similar) over a
-  joined dataset still pass when the metric also reads the root.
+  joined dataset still pass when the metric also reads the root, and so
+  does any aggregate over a dataset joined on a key of the root. A metric
+  that is only `COUNT(*)` is refused too: it counted stores or sales
+  depending on what else the question asked. Metrics refused in every
+  question are hidden from agents and reported by `validate`.
+- `validate` reports a metric that names an unknown field; it passed and
+  then failed every question.
 - A rewritten function inside another one is translated in queries too,
   not only by `translate`: `NULLIFZERO(APPROX_PERCENTILE(x, 0.5))` in a
   metric reached ClickHouse as `APPROX_PERCENTILE`, which it does not
