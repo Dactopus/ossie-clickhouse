@@ -305,8 +305,6 @@ def rewrite(node: exp.Expression) -> exp.Expression:
             exp.Null(),
             _f("arrayElement", values, index),
         )
-    if isinstance(node, exp.VariancePop):
-        return _f("varPop", node.this)
     if isinstance(node, exp.CurrentTime):
         return _f("toTime", _f("now"))
     if isinstance(node, exp.DayOfYear):

@@ -7,8 +7,13 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-03
+
 ### Changed
 
+- Requires SQLGlot 30.21 or later, which generates `varPop` for
+  `VAR_POP` itself (tobymao/sqlglot#8469); the translator's own rewrite
+  is gone.
 - A relationship is joined when its `to_columns` cover a primary or unique
   key of the target, not only when they equal one, as the reference
   validator reads the spec (apache/ossie#330). A join on
