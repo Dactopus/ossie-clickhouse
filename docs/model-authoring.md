@@ -185,7 +185,9 @@ ossie-clickhouse validate model.yaml --url http://user:password@host:8123
 ```
 
 Without `--url`: schema, the pinned version (`0.2.0.dev0`), unique names,
-relationships that resolve, expressions in a translatable dialect. With
+relationships that resolve, expressions in a translatable dialect,
+joins the planner accepts, and metrics no question can answer (such as
+one naming an unknown field or a bare `COUNT(*)`). With
 `--url`: every source exists, every column a field, key or relationship
 uses exists. Run it as a user who can read everything the model names;
 run as a restricted user it reports that user's view, not the model's
