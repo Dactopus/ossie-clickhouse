@@ -60,6 +60,25 @@ def summary(model: OssieDocument) -> dict[str, Any]:
     }
 
 
+def instructions(model: OssieDocument) -> str:
+    """The server's instructions: how to ask, then the model's own instructions.
+
+    They reach the agent whichever tool it calls first; list_model repeats
+    the model's part for clients that ignore server instructions."""
+    text = (
+        f"Semantic model '{model.name}' over ClickHouse. Ask in business terms: pick metrics "
+        "and dimensions by name, never write SQL. Start with list_model. Never add up or "
+        "rank rows yourself: for a total, run query without dimensions; for a comparison, "
+        "query the exact dimensions you need. If the model has no metric or field for what "
+        "is asked, say so; do not approximate it with filters on other fields. Every number "
+        "you state must come from a query result: rounding and formatting are fine, but do "
+        "not derive, estimate or recall other numbers, such as the counts behind a rate."
+    )
+    if model_text := _ai(model).get("instructions"):
+        text += f"\n\nInstructions of this model:\n{model_text}"
+    return text
+
+
 def _objects(model: OssieDocument):
     for d in model.datasets:
         yield "dataset", d.name, d
@@ -133,13 +152,7 @@ def build_server(
     server = MCPServer(
         "ossie-clickhouse",
         version=version("ossie-clickhouse"),
-        instructions=(
-            f"Semantic model '{m.name}' over ClickHouse. Ask in business terms: pick metrics "
-            "and dimensions by name, never write SQL. Start with list_model. Never add up or "
-            "rank rows yourself: for a total, run query without dimensions; for a comparison, "
-            "query the exact dimensions you need. If the model has no metric or field for what "
-            "is asked, say so; do not approximate it with filters on other fields."
-        ),
+        instructions=instructions(m),
     )
 
     @server.tool()
