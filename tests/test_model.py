@@ -106,6 +106,21 @@ def test_cli(tmp_path, tpcds, capsys):
     assert "unsupported version" in capsys.readouterr().err
 
 
+def test_validate_reports_relationships_the_planner_refuses(tmp_path, tpcds, capsys):
+    # The model still loads; only questions that join these datasets fail.
+    item = next(d for d in tpcds["datasets"] if d["name"] == "item")
+    item["primary_key"], item["unique_keys"] = None, None
+    store = next(d for d in tpcds["datasets"] if d["name"] == "store")
+    store["primary_key"], store["unique_keys"] = ["s_store_id"], None
+    p = write(tmp_path, tpcds)
+    load_model(p)
+    assert main(["validate", str(p)]) == 1
+    err = capsys.readouterr().err
+    assert "'store_sales_to_item' is many-to-one: 'item' declares no primary_key" in err
+    assert "'store_sales_to_store' is not many-to-one: to_columns ['s_store_sk']" in err
+    assert "2 problem(s)" in err
+
+
 def test_cli_serve_without_mcp_extra(monkeypatch, capsys):
     import sys
 
