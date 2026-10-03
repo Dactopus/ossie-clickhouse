@@ -235,3 +235,12 @@ OFFSETS = [
 @pytest.mark.parametrize("expr", OFFSETS)
 def test_window_offsets(expr, clickhouse, duck):
     check_rows(expr, clickhouse, duck, CH_OFFSET, DUCK_OFFSET)
+
+
+@pytest.mark.parametrize("expr", [c[0] for c in AGGREGATES + CATALOG + WINDOWS + OFFSETS])
+def test_rewrite_is_idempotent(expr):
+    # The planner rewrites a metric, then again inside a filter that names it.
+    from ossie_clickhouse.translate import parse, rewrite_tree
+
+    once = rewrite_tree(parse(expr))
+    assert rewrite_tree(once).sql("clickhouse") == once.sql("clickhouse")

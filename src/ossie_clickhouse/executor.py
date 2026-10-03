@@ -18,7 +18,15 @@ from sqlglot import exp
 
 from ossie_clickhouse.access import Hidden, Policy, restrict
 from ossie_clickhouse.model import declared_keys
-from ossie_clickhouse.planner import Catalog, PlanError, Planner, Query, TableInfo, source_table
+from ossie_clickhouse.planner import (
+    Catalog,
+    PlanError,
+    Planner,
+    Query,
+    TableInfo,
+    source_table,
+    unanswerable_metrics,
+)
 from ossie_clickhouse.translate import parse, pick_expression, untranslatable
 
 DEFAULT_URL = "http://127.0.0.1:8123"
@@ -60,9 +68,11 @@ class Executor:
         self.user, self.roles = self.client.query(
             "SELECT currentUser(), enabledRoles()"
         ).result_rows[0]
+        # Metrics no question can answer are hidden too: an agent would only
+        # spend a turn on each. validate reports them.
         hidden = self._hidden_by_grants() | Hidden(
             fields=frozenset(self.untranslatable_fields),
-            metrics=frozenset(self.untranslatable_metrics),
+            metrics=frozenset(self.untranslatable_metrics) | frozenset(unanswerable_metrics(model)),
         )
         if policy:
             hidden |= policy.hidden_for(self.user, list(self.roles))

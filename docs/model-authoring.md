@@ -54,15 +54,21 @@ dataset appears once per root row that references it, and only if one
 does. The planner refuses what that would get wrong:
 
 - An aggregate that reads only joined datasets, unless repeats do not
-  change it: `MIN`, `MAX`, `ANY_VALUE`, `BOOL_AND`, `BOOL_OR` or
-  `DISTINCT`. `SUM(store.s_number_employees)` over sales would count a
-  store's staff once per sale. An argument that mixes root and joined
-  columns is computed once per root row and is fine:
-  `SUM(lines.qty * products.price)`.
+  change it: `MIN`, `MAX`, `ANY_VALUE`, `BOOL_AND`, `BOOL_OR`,
+  `APPROX_COUNT_DISTINCT` or `DISTINCT`. `SUM(store.s_number_employees)`
+  over sales would count a store's staff once per sale. An argument that
+  mixes root and joined columns is computed once per root row and is fine:
+  `SUM(lines.qty * products.price)`. So is a dataset joined on a key of
+  the root (a one-to-one extension such as `order_shipping` joined on the
+  order id): its rows do not repeat.
 - A metric that aggregates no column of the root at all, even with a
   repeat-safe aggregate. `COUNT(DISTINCT sessions.user_id)` in a question
   whose root is purchases (because of a purchases metric, dimension or
   filter) counts only users with a purchase.
+- `COUNT(*)` on its own: it names no dataset, so it would count stores when
+  asked by store and sales when asked next to a sales metric. Count a key
+  instead, `COUNT(orders.order_id)`, or keep it next to an aggregate that
+  names the dataset, as in `SUM(orders.amount) / COUNT(*)`.
 
 `COUNT(DISTINCT customer.id)` next to a sales column, as in
 `SUM(sales.amount) / COUNT(DISTINCT customer.id)`, passes: it is about the

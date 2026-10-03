@@ -79,7 +79,7 @@ Python library with a CLI entry point. The parts that constrain code:
   only hides more; it never grants. Nothing in this project authenticates.
   A field or metric whose expression does not translate is hidden the same
   way (nothing proves it reads only visible columns) and reported by
-  `validate`.
+  `validate`; so is a metric the planner refuses in every question.
 - ClickHouse specifics come from introspecting `system.tables`,
   `system.columns` and `system.dictionaries`, not from asking the user.
   `Replacing*` engines are read with `FINAL` (measured faster than `argMax`);
@@ -94,9 +94,10 @@ Python library with a CLI entry point. The parts that constrain code:
   primary or unique key of the target. Generated SQL carries
   `SETTINGS join_use_nulls = 1` so unmatched rows get NULL, not defaults.
   Metrics run over the root's rows, so the planner refuses an aggregate
-  that reads only joined datasets unless repeats cannot change it, and an
-  aggregate expression that reads no root column at all
-  (`docs/design.md`).
+  that reads only joined datasets unless repeats cannot change it or the
+  join is on a key of the root, an aggregate expression that reads no root
+  column at all, and a metric whose `COUNT(*)` no other aggregate ties to
+  one dataset (`docs/design.md`).
 - Name resolution is case-insensitive (spec rule); emitted SQL uses physical
   names exactly as the model writes them (ClickHouse is case-sensitive).
 - Planner errors name the nearest known object; agents recover from that.
