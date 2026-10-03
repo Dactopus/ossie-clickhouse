@@ -169,18 +169,20 @@ class Planner:
                 f"{[r.name for r in found]}; this version cannot choose between them"
             )
         r = found[0]
-        if not self._is_many_to_one(r, target):
+        keys = [k for k in [target.primary_key, *(target.unique_keys or [])] if k]
+        if not keys:
+            raise PlanError(
+                f"relationship {r.name!r} is not many-to-one: {target.name!r} declares no "
+                "primary_key or unique_keys; declare the key its to_columns cover"
+            )
+        # Any superset of a unique key is unique too, so the join cannot fan out.
+        cols = {c.upper() for c in r.to_columns}
+        if not any(cols >= {c.upper() for c in k} for k in keys):
             raise PlanError(
                 f"relationship {r.name!r} is not many-to-one: to_columns "
-                f"{r.to_columns} are not a primary or unique key of {target.name!r}"
+                f"{r.to_columns} do not cover a primary or unique key of {target.name!r}"
             )
         return r
-
-    @staticmethod
-    def _is_many_to_one(r: OssieRelationship, target: OssieDataset) -> bool:
-        keys = [target.primary_key or [], *(target.unique_keys or [])]
-        cols = {c.upper() for c in r.to_columns}
-        return any(cols == {c.upper() for c in k} for k in keys if k)
 
     def _root(self, used: set[str]) -> OssieDataset:
         """The dataset that has direct relationships to every other used dataset."""

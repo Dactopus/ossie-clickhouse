@@ -92,9 +92,22 @@ them, or ClickHouse fixes them.
 ## Many-to-one inferred from keys
 
 The spec has no cardinality attribute. A relationship is used only when its
-`to_columns` are the primary key or a unique key of the target, which is
+`to_columns` cover the primary key or a unique key of the target, which is
 what makes a `LEFT JOIN` safe against fan-out. Star schemas need nothing
 more; one-to-many and multi-fact questions wait for demand.
+
+The spec calls `to_columns` "Primary/unique key columns"; covering, a
+superset of a key, is how the reference validator reads it
+(apache/ossie#330), and a superset of a unique key is unique too. It
+matters for multi-tenant schemas joined on `(tenant_id, customer_id)`
+with the key declared as `customer_id`. Such a join to a single-key
+dictionary stays a `LEFT JOIN`: `dictGetOrNull` by the key alone would
+ignore the extra columns.
+
+Two points are stricter than that validator, which only warns. A
+relationship whose `to_columns` cover no key is refused, not used with a
+warning. A target with no declared key is refused too, where the
+validator skips the check: nothing then rules out fan-out.
 
 ## Remote MCP server, designed, not built
 

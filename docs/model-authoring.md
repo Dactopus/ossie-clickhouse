@@ -19,9 +19,11 @@ query as a source is not supported.
 
 `primary_key` and `unique_keys` hold physical column names, as the spec
 says. They are not decoration: a relationship is used only when its
-`to_columns` are the primary key or a unique key of the target dataset.
-That is how the planner knows the join is many-to-one and cannot multiply
-fact rows. A dimension dataset without a declared key is unreachable.
+`to_columns` cover (include all columns of) the primary key or a unique
+key of the target dataset. That is how the planner knows the join is
+many-to-one and cannot multiply fact rows; extra columns, such as a
+`tenant_id` next to the key, only narrow the match. A dimension dataset
+without a declared key is unreachable.
 
 ```yaml
 datasets:
