@@ -3,7 +3,7 @@
 import pytest
 
 from ossie_clickhouse import load_model
-from ossie_clickhouse.mcp_server import describe, search, summary
+from ossie_clickhouse.mcp_server import describe, instructions, search, summary
 from tests.test_model import FIXTURE
 
 MODEL = load_model(FIXTURE)
@@ -65,6 +65,16 @@ def test_ai_context_forms():
     assert summary(m)["instructions"] == "plain text instructions"
     d = describe(m, "total_sales")
     assert d["instructions"] == "sum, never average" and d["examples"] == ["sales by brand"]
+
+
+def test_instructions_carry_the_model_instructions():
+    # An agent that starts with search_model never sees list_model's copy.
+    text = instructions(MODEL)
+    assert text.startswith("Semantic model 'tpcds_retail_model' over ClickHouse.")
+    assert "Every number you state must come from a query result" in text
+    assert text.endswith(f"Instructions of this model:\n{summary(MODEL)['instructions']}")
+    bare = MODEL.model_copy(update={"ai_context": None})
+    assert "Instructions of this model" not in instructions(bare)
 
 
 def test_describe_shows_the_expression_the_planner_runs():

@@ -7,6 +7,22 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-03
+
+### Changed
+
+- The MCP server's instructions include the model's own
+  `ai_context.instructions`. They used to come only from `list_model`, so
+  an agent that started with `search_model` never saw them.
+- The MCP server's instructions tell the agent to state only numbers a
+  query returned. Agents named the value of a metric they had not queried
+  and made up the counts behind a rate.
+- Refusals of a question that mixes metrics of different datasets say how
+  to answer it in two: ask for the first metric, then for the second with
+  a filter such as `sessions.source IN (...)` over the values the first
+  answer returned. The refusal for datasets not joined from one root used
+  to give no advice at all.
+
 ## [0.2.0] - 2026-10-03
 
 ### Changed
