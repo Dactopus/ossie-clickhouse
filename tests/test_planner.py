@@ -2,7 +2,14 @@ import pytest
 
 from ossie_clickhouse import load_model
 from ossie_clickhouse.cli import main
-from ossie_clickhouse.planner import PlanError, Planner, Query, TableInfo, source_table
+from ossie_clickhouse.planner import (
+    PlanError,
+    Planner,
+    Query,
+    TableInfo,
+    source_table,
+    unanswerable_metrics,
+)
 from tests.test_model import FIXTURE
 
 MODEL = load_model(FIXTURE)
@@ -103,7 +110,7 @@ def test_order_by():
 
 
 def test_deterministic():
-    q = Query(metrics=("store_productivity",), dimensions=("store.s_state", "item.i_category"))
+    q = Query(metrics=("total_sales",), dimensions=("store.s_state", "item.i_category"))
     assert P.sql(q) == P.sql(q)
 
 
@@ -228,13 +235,16 @@ def test_filter_on_unselected_metric_adds_its_join():
         Query(
             metrics=("total_sales",),
             dimensions=("item.i_brand",),
-            filters=("store_productivity > 1",),
+            filters=("customer_lifetime_value > 1",),
         )
     )
-    assert "LEFT JOIN tpcds.store AS store ON store_sales.ss_store_sk = store.s_store_sk" in sql
+    assert (
+        "LEFT JOIN tpcds.customer AS customer "
+        "ON store_sales.ss_customer_sk = customer.c_customer_sk" in sql
+    )
     assert sql.endswith(
         "GROUP BY item.i_brand HAVING SUM(store_sales.ss_ext_sales_price) / "
-        "nullIf(SUM(store.s_number_employees), 0) > 1 ORDER BY total_sales DESC "
+        "COUNT(DISTINCT customer.c_customer_sk) > 1 ORDER BY total_sales DESC "
         "SETTINGS join_use_nulls = 1"
     )
 
@@ -460,7 +470,10 @@ def test_having_values(tpcds):
     assert planned and planned == direct
 
 
-@pytest.mark.parametrize("metric", MODEL.metrics, ids=[m.name for m in MODEL.metrics])
+ANSWERABLE = [m for m in MODEL.metrics if m.name not in unanswerable_metrics(MODEL)]
+
+
+@pytest.mark.parametrize("metric", ANSWERABLE, ids=[m.name for m in ANSWERABLE])
 def test_every_metric_executes(metric, tpcds):
     dims = {
         "cumulative_sales": ("date_dim.d_date",),
@@ -469,3 +482,111 @@ def test_every_metric_executes(metric, tpcds):
     }.get(metric.name, ("store.s_state",))
     rows = tpcds.query(P.sql(Query(metrics=(metric.name,), dimensions=dims, limit=5))).result_rows
     assert rows
+
+
+def _with_metrics(**expressions: str) -> Planner:
+    def mutate(m):
+        for name, e in expressions.items():
+            m["metrics"].append(
+                {
+                    "name": name,
+                    "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": e}]},
+                }
+            )
+
+    return _variant(mutate)
+
+
+@pytest.mark.parametrize(
+    ("query", "message"),
+    [
+        # A joined dataset's rows repeat once per root row: store_productivity sums
+        # each store's employees once per sale.
+        (
+            Query(metrics=("store_productivity",), dimensions=("store.s_store_name",)),
+            "metric 'store_productivity' applies SUM(store.s_number_employees) to store "
+            "columns alone over store_sales rows",
+        ),
+        (
+            Query(metrics=("total_sales",), filters=("store_productivity > 1",)),
+            "filter 'store_productivity > 1' applies SUM(store.s_number_employees)",
+        ),
+        (
+            Query(metrics=("total_sales", "headcount"), dimensions=("store.s_state",)),
+            "metric 'headcount' aggregates store rows, but this question is answered over "
+            "store_sales rows (because of metric 'total_sales')",
+        ),
+        # Even a repeat-safe aggregate is about other rows: only customers who bought.
+        (
+            Query(metrics=("customers",), filters=("store_sales.ss_quantity > 1",)),
+            "(because of filter 'store_sales.ss_quantity > 1')",
+        ),
+        (
+            Query(metrics=("customers",), dimensions=("store_sales.ss_store_sk",)),
+            "(because of dimension 'store_sales.ss_store_sk')",
+        ),
+        # Checked after rewrite: APPROX_PERCENTILE is an aggregate only then.
+        # Nested in another rewrite: the check sees the inner one rewritten too.
+        (
+            Query(metrics=("sales_per_nonzero_median_staff",)),
+            "applies quantileTDigest(0.5)(store.s_number_employees)",
+        ),
+        (
+            Query(metrics=("sales_per_median_staff",)),
+            "metric 'sales_per_median_staff' applies "
+            "quantileTDigest(0.5)(store.s_number_employees)",
+        ),
+    ],
+)
+def test_refuses_aggregates_over_other_rows_than_the_root(query, message):
+    planner = _with_metrics(
+        headcount="SUM(store.s_number_employees)",
+        customers="COUNT(DISTINCT customer.c_customer_sk)",
+        sales_per_median_staff="SUM(store_sales.ss_ext_sales_price) / "
+        "APPROX_PERCENTILE(store.s_number_employees, 0.5)",
+        sales_per_nonzero_median_staff="SUM(store_sales.ss_ext_sales_price) / "
+        "NULLIFZERO(APPROX_PERCENTILE(store.s_number_employees, 0.5))",
+    )
+    with pytest.raises(PlanError) as e:
+        planner.sql(query)
+    assert message in str(e.value)
+
+
+@pytest.mark.parametrize(
+    ("metrics", "dimensions"),
+    [
+        (("customer_lifetime_value",), ("store.s_state",)),  # customer only under DISTINCT
+        (("cumulative_sales",), ("date_dim.d_date",)),  # date_dim only in OVER
+        (("brand_rank_in_store",), ("store.s_store_sk", "item.i_brand")),
+        (("monthly_sales_change",), ("date_dim.d_year", "date_dim.d_moy")),
+        (("revenue_at_list_price",), ("store.s_state",)),  # one value per root row
+        (("sales_per_largest_staff",), ("item.i_brand",)),  # MAX ignores repeats
+        (("sales_count",), ("store.s_state",)),  # COUNT(*) counts root rows
+    ],
+)
+def test_allows_aggregates_that_read_root_rows(metrics, dimensions):
+    planner = _with_metrics(
+        revenue_at_list_price="SUM(store_sales.ss_quantity * item.i_current_price)",
+        sales_per_largest_staff="SUM(store_sales.ss_ext_sales_price) / "
+        "MAX(store.s_number_employees)",
+        sales_count="COUNT(*)",
+    )
+    planner.sql(Query(metrics=metrics, dimensions=dimensions))
+
+
+def test_unanswerable_metrics():
+    assert list(unanswerable_metrics(MODEL)) == ["store_productivity"]
+    # Dataset names are case-insensitive: one dataset, spelled two ways.
+    planner = _with_metrics(
+        margin="SUM(Store_Sales.ss_ext_sales_price) - SUM(store_sales.ss_net_profit)"
+    )
+    assert "margin" not in unanswerable_metrics(planner.model)
+    assert "SUM(store.s_number_employees)" in unanswerable_metrics(MODEL)["store_productivity"]
+
+
+def test_nested_rewrite_in_a_metric():
+    planner = _with_metrics(
+        median_or_null="NULLIFZERO(APPROX_PERCENTILE(store_sales.ss_quantity, 0.5))"
+    )
+    sql = planner.sql(Query(metrics=("median_or_null",)))
+    assert "nullIf(quantileTDigest(0.5)(store_sales.ss_quantity), 0) AS median_or_null" in sql

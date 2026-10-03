@@ -338,9 +338,9 @@ def rewrite(node: exp.Expression) -> exp.Expression:
     return node
 
 
-def to_clickhouse(expression: str | exp.Expression) -> str:
-    """ClickHouse SQL for an Ossie expression."""
-    tree = parse(expression) if isinstance(expression, str) else expression.copy()
+def rewrite_tree(tree: exp.Expression) -> exp.Expression:
+    """A copy of ``tree`` with every node rewritten for ClickHouse."""
+    tree = tree.copy()
     # Bottom-up, so a rewrite that replaces a node still sees its arguments rewritten;
     # Expression.transform does not descend into a replaced node.
     for node in reversed(list(tree.dfs())):
@@ -352,7 +352,13 @@ def to_clickhouse(expression: str | exp.Expression) -> str:
             tree = new
         else:
             parent.set(arg_key, new, index)
-    return tree.sql(dialect="clickhouse")
+    return tree
+
+
+def to_clickhouse(expression: str | exp.Expression) -> str:
+    """ClickHouse SQL for an Ossie expression."""
+    tree = parse(expression) if isinstance(expression, str) else expression
+    return rewrite_tree(tree).sql(dialect="clickhouse")
 
 
 def translate(expression: OssieExpression) -> str:

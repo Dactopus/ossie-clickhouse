@@ -96,7 +96,13 @@ def test_top_level_must_be_a_mapping(tmp_path):
 
 
 def test_cli(tmp_path, tpcds, capsys):
-    assert main(["validate", str(FIXTURE)]) == 0
+    # The reference model's store_productivity sums two datasets: no question answers it.
+    assert main(["validate", str(FIXTURE)]) == 1
+    assert "metric 'store_productivity': aggregates columns of store and store_sales" in (
+        capsys.readouterr().err
+    )
+    tpcds["metrics"] = [m for m in tpcds["metrics"] if m["name"] != "store_productivity"]
+    assert main(["validate", str(write(tmp_path, tpcds, "ok.yaml"))]) == 0
     assert "ok (tpcds_retail_model" in capsys.readouterr().out
     tpcds["version"] = "0.0.0"
     bad = write(tmp_path, tpcds)
@@ -112,6 +118,7 @@ def test_validate_reports_relationships_the_planner_refuses(tmp_path, tpcds, cap
     item["primary_key"], item["unique_keys"] = None, None
     store = next(d for d in tpcds["datasets"] if d["name"] == "store")
     store["primary_key"], store["unique_keys"] = ["s_store_id"], None
+    tpcds["metrics"] = [m for m in tpcds["metrics"] if m["name"] != "store_productivity"]
     p = write(tmp_path, tpcds)
     load_model(p)
     assert main(["validate", str(p)]) == 1

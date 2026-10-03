@@ -14,7 +14,7 @@ from clickhouse_connect.driver.exceptions import ClickHouseError
 from ossie_clickhouse.access import Policy
 from ossie_clickhouse.executor import Executor, connect
 from ossie_clickhouse.model import ModelError, join_problems, load_model
-from ossie_clickhouse.planner import PlanError, Planner, Query
+from ossie_clickhouse.planner import PlanError, Planner, Query, unanswerable_metrics
 from ossie_clickhouse.translate import untranslatable
 
 
@@ -118,6 +118,7 @@ def _run(args: argparse.Namespace) -> int:
     problems = [f"field {k}: {v}" for k, v in fields.items()]
     problems += [f"metric {k!r}: {v}" for k, v in metrics.items()]
     problems += join_problems(doc)
+    problems += [f"metric {k!r}: {v}" for k, v in unanswerable_metrics(doc).items()]
     where = ""
     if ex:
         problems += ex.check()

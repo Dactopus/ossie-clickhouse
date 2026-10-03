@@ -32,6 +32,20 @@ a minor release may change the Python API.
 
 ### Fixed
 
+- A question no longer returns a wrong number when a metric aggregates
+  another dataset's rows over the root's: each joined row repeats once per
+  root row that references it, and only referenced rows are present. The
+  planner now refuses such a metric with a message that names what made
+  the root. The reference TPC-DS `store_productivity` summed each store's
+  staff once per sale; it is now refused in every question, and
+  `validate` reports it, so a model that passed `validate` before may not.
+  Repeat-safe aggregates (`MIN`, `MAX`, `DISTINCT` and similar) over a
+  joined dataset still pass when the metric also reads the root.
+- A rewritten function inside another one is translated in queries too,
+  not only by `translate`: `NULLIFZERO(APPROX_PERCENTILE(x, 0.5))` in a
+  metric reached ClickHouse as `APPROX_PERCENTILE`, which it does not
+  have.
+
 - `LAG` and `LEAD` without a default, and `NTH_VALUE` past the end of the
   frame, return NULL as the spec (ANSI SQL) says, not 0. ClickHouse falls
   back to the type's default when the argument is not Nullable, so a

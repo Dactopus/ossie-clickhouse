@@ -112,6 +112,52 @@ target with no declared key is refused too, where the validator skips the
 check: nothing then rules out fan-out. The model still loads; questions
 that need such a join fail, and `validate` reports the relationship.
 
+## Refuse a metric over another dataset's rows
+
+A question is one `SELECT` over the root's rows with many-to-one joins,
+so a joined row repeats once per root row that references it, and rows
+no root row references are absent. Two failures follow, and until this
+change both returned a plausible wrong number. The reference TPC-DS model's
+`store_productivity`, `SUM(store_sales.ss_ext_sales_price) /
+NULLIF(SUM(store.s_number_employees), 0)`, summed each store's staff once
+per sale and came out about 458,000 times too small. In a GA4 model,
+`sessions` asked next to `revenue` was answered over purchases: 1,800
+sessions from Google instead of 102,920.
+
+The planner refuses both after it picks the root, on the rewritten tree
+(`APPROX_PERCENTILE` is an aggregate only after rewrite):
+
+- An aggregate whose argument reads joined datasets and no root column is
+  refused unless repeats cannot change it (`MIN`, `MAX`, `ANY_VALUE`,
+  `BOOL_AND`, `BOOL_OR`, `DISTINCT`, approximate distinct counts).
+  Everything else, percentiles included, counts as repeat-sensitive. A
+  mixed argument such as `SUM(qty * price)` is one value per root row and
+  passes; `SUM(CASE WHEN root.x THEN joined.y END)` passes too, though it
+  repeats `joined.y`: the per-row expression is the author's.
+- An aggregate expression that reads no root column at all is refused even
+  when repeat-safe: it would be about the joined rows the root references.
+  `COUNT(*)` reads no column and counts root rows.
+
+Only columns inside an aggregate's argument count. A window function reads
+grouped rows, and its `PARTITION BY` and `ORDER BY` columns are grouping
+keys. The check covers selected metrics and aggregate filters, including
+metrics named in a filter. The error names what made the root (a metric,
+a dimension or a filter) so an agent can split the question.
+
+The cost: a correct question is refused when its intended population is
+the root's references, such as distinct users per purchased item through
+`sessions.user_id`. The planner cannot tell that from users next to
+revenue, where it would be wrong. The spec does not say which rows a
+metric spanning datasets is computed over; apache/ossie#354 (open) asks
+every metric to be grain-safe, and #343 (open) gives metrics a home
+dataset, which would replace guessing the home from the expression.
+Answering several facts in one question (each metric from its own root,
+joined on the dimensions) waits for demand.
+
+A metric that refuses in every question, a repeat-sensitive aggregate over
+each of two datasets, stays visible to agents and is reported by
+`validate`.
+
 ## Remote MCP server, designed, not built
 
 Streamable HTTP with OAuth 2.1 is built only when a real deployment asks
