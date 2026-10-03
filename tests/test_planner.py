@@ -256,8 +256,44 @@ def test_join_requires_unique_key_on_target():
         item["primary_key"] = ["i_item_id"]
         item["unique_keys"] = None
 
-    with pytest.raises(PlanError, match="not many-to-one"):
+    with pytest.raises(PlanError, match="do not cover a primary or unique key"):
         _variant(mutate).sql(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+
+
+def test_join_requires_declared_key_on_target():
+    def mutate(m):
+        item = next(d for d in m["datasets"] if d["name"] == "item")
+        item["primary_key"] = None
+        item["unique_keys"] = None
+
+    with pytest.raises(PlanError, match="'item' declares no primary_key or unique_keys"):
+        _variant(mutate).sql(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+
+
+def _superset_of_item_key(m):
+    """Join store_sales to item on (i_item_sk, i_item_id): wider than the key."""
+    r = next(r for r in m["relationships"] if r["name"] == "store_sales_to_item")
+    r["from_columns"] = ["ss_item_sk", "ss_store_sk"]
+    r["to_columns"] = ["I_ITEM_SK", "i_item_id"]
+
+
+def test_join_on_superset_of_key():
+    """A superset of a unique key is unique too (apache/ossie#330 reads it the same way)."""
+    sql = _variant(_superset_of_item_key).sql(
+        Query(metrics=("total_sales",), dimensions=("item.i_brand",))
+    )
+    assert (
+        "LEFT JOIN tpcds.item AS item ON store_sales.ss_item_sk = item.I_ITEM_SK "
+        "AND store_sales.ss_store_sk = item.i_item_id"
+    ) in sql
+
+
+def test_dictionary_joined_on_superset_of_its_key_is_a_join():
+    """dictGet by the key alone would ignore the extra column and match rows the join would not."""
+    planner = _variant(_superset_of_item_key)
+    planner.catalog = {"item": TableInfo("Dictionary", frozenset(), dictionary_key="i_item_sk")}
+    sql = planner.sql(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+    assert "LEFT JOIN tpcds.item AS item" in sql and "dictGet" not in sql
 
 
 def test_anonymous_aggregate_filter_goes_to_having():

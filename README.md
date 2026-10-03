@@ -67,7 +67,7 @@ known object. The other modules are internal.
 
 - Datasets come from `source`, joins from `relationships`. One root
   dataset, `LEFT JOIN` to the dimensions the question touches, only along
-  relationships whose `to_columns` are a primary or unique key of the
+  relationships whose `to_columns` cover a primary or unique key of the
   target (many-to-one). `SETTINGS`
   [`join_use_nulls = 1`](https://clickhouse.com/docs/operations/settings/settings#join_use_nulls)
   so unmatched rows get NULL, not ClickHouse defaults.

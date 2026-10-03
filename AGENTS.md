@@ -90,7 +90,7 @@ Python library with a CLI entry point. The parts that constrain code:
   the executor built. Keep that boundary.
 - Query planning is deterministic: datasets from `source`, joins from
   `relationships`, one `SELECT` per question. Joins are `LEFT JOIN` from
-  one root dataset, only along relationships whose `to_columns` are a
+  one root dataset, only along relationships whose `to_columns` cover a
   primary or unique key of the target. Generated SQL carries
   `SETTINGS join_use_nulls = 1` so unmatched rows get NULL, not defaults.
 - Name resolution is case-insensitive (spec rule); emitted SQL uses physical

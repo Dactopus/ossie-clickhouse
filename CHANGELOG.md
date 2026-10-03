@@ -9,6 +9,13 @@ a minor release may change the Python API.
 
 ### Changed
 
+- A relationship is joined when its `to_columns` cover a primary or unique
+  key of the target, not only when they equal one, as the reference
+  validator reads the spec (apache/ossie#330). A join on
+  `(tenant_id, customer_id)` to customers keyed by `customer_id` used to
+  fail with "not many-to-one". A target with no declared key gets its own
+  error that says so.
+
 - NULLs sort last in both directions, in window `ORDER BY` inside model
   expressions and in a query's `order_by`. Ascending orderings used to put
   NULLs first, a default inherited from SQLGlot rather than chosen; a
