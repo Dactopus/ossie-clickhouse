@@ -132,6 +132,10 @@ data must already be in ClickHouse.
 - One root dataset per question, with direct relationships to every
   dataset it touches. Chains through an intermediate dataset and
   questions across two fact tables are not supported.
+- Metrics are computed over the root's rows. A question whose metric
+  would count a joined dataset's rows repeatedly, or only those the root
+  references, is refused with a message, not answered with a wrong
+  number; see [model authoring](docs/model-authoring.md#keys-decide-which-joins-are-allowed).
 - Joins are many-to-one only, inferred from primary and unique keys.
 - No time grain and no derived-dimension syntax: declare a field per
   grain or band (see [model authoring](docs/model-authoring.md)). The

@@ -93,6 +93,10 @@ Python library with a CLI entry point. The parts that constrain code:
   one root dataset, only along relationships whose `to_columns` cover a
   primary or unique key of the target. Generated SQL carries
   `SETTINGS join_use_nulls = 1` so unmatched rows get NULL, not defaults.
+  Metrics run over the root's rows, so the planner refuses an aggregate
+  that reads only joined datasets unless repeats cannot change it, and an
+  aggregate expression that reads no root column at all
+  (`docs/design.md`).
 - Name resolution is case-insensitive (spec rule); emitted SQL uses physical
   names exactly as the model writes them (ClickHouse is case-sensitive).
 - Planner errors name the nearest known object; agents recover from that.

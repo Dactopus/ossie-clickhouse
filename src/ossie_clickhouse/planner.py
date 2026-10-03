@@ -14,7 +14,7 @@ from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
 
 from ossie_clickhouse.model import join_problem
-from ossie_clickhouse.translate import parse, pick_expression, rewrite
+from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree
 
 
 class PlanError(ValueError):
@@ -57,6 +57,101 @@ def source_table(source: str) -> exp.Table:
         raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
     # ClickHouse has no schema level: keep database and table, drop the middle.
     return exp.table_(parts[-1], db=parts[0] if len(parts) > 1 else None)
+
+
+# Aggregates whose value does not change when an input row repeats. Only these
+# may read a joined dataset's columns on their own: each row of a many-to-one
+# target repeats once per root row that references it.
+_REPEAT_SAFE = (exp.Min, exp.Max, exp.AnyValue, exp.LogicalAnd, exp.LogicalOr, exp.ApproxDistinct)
+
+
+def _repeat_safe(agg: exp.AggFunc) -> bool:
+    return isinstance(agg, _REPEAT_SAFE) or isinstance(agg.this, exp.Distinct)
+
+
+def _aggregate_inputs(tree: exp.Expression) -> list[tuple[exp.AggFunc, set[str]]]:
+    """Each aggregate that reads joined rows, with the datasets of the columns it reads.
+
+    A column counts for its nearest aggregate only, so SUM(SUM(x)) OVER () reads x
+    once. The function of an OVER clause reads grouped rows, not joined ones, and
+    PARTITION BY / ORDER BY columns are grouping keys: neither counts."""
+    found: dict[int, tuple[exp.AggFunc, set[str]]] = {}
+    for col in tree.find_all(exp.Column):
+        node = col.parent
+        while node is not None and not (
+            isinstance(node, exp.AggFunc) and not _window_function(node)
+        ):
+            node = node.parent
+        if node is not None:
+            found.setdefault(id(node), (node, set()))[1].add(col.table)
+    return list(found.values())
+
+
+def _window_function(agg: exp.AggFunc) -> bool:
+    parent = agg.parent
+    if isinstance(parent, exp.RespectNulls | exp.IgnoreNulls):
+        parent = parent.parent
+    return isinstance(parent, exp.Window)
+
+
+def _repeated(tree: exp.Expression, root: str) -> tuple[exp.AggFunc, set[str]] | None:
+    """A duplicate-sensitive aggregate that reads only datasets other than ``root``."""
+    for agg, datasets in _aggregate_inputs(tree):
+        if root not in datasets and not _repeat_safe(agg):
+            return agg, datasets
+    return None
+
+
+def unanswerable_metrics(model: OssieDocument) -> dict[str, str]:
+    """Metrics the planner refuses in every question, with why.
+
+    A duplicate-sensitive aggregate over each of two datasets: whichever is
+    the root, the other one's rows repeat."""
+    planner = Planner(model)
+    out = {}
+    for m in model.metrics or []:
+        try:
+            # Through the planner, so names are the model's spelling, as in plan().
+            tree = rewrite_tree(planner.resolve(pick_expression(m.expression), set()))
+        except ValueError:
+            continue  # untranslatable, reported as such
+        homes = sorted({d for _, ds in _aggregate_inputs(tree) for d in ds})
+        if homes and all(_repeated(tree, root) for root in homes):
+            aggs = ", ".join(_repeated(tree, root)[0].sql("clickhouse") for root in homes)
+            out[m.name] = (
+                f"aggregates columns of {' and '.join(homes)} separately with functions that "
+                f"count repeated rows ({aggs}); whichever "
+                "is the root of a question, the other's rows repeat, so every question "
+                "with it is refused"
+            )
+    return out
+
+
+def _check_rows(label: str, tree: exp.Expression, root: str, touched: dict[str, set[str]]) -> None:
+    """Refuse an aggregate expression whose answer would be about other rows than the root's.
+
+    Joins are many-to-one, so a joined dataset's rows repeat per root row
+    and include only those the root references."""
+    homes = sorted({d for _, ds in _aggregate_inputs(tree) for d in ds})
+    if homes and root not in homes:
+        by = [item for item, ds in touched.items() if root in ds and item != label] or [label]
+        home = " and ".join(homes)
+        raise PlanError(
+            f"{label} aggregates {home} rows, but this question is answered over "
+            f"{root} rows (because of {', '.join(by)}): it would count only {home} "
+            f"rows that {root} references, once per reference. Ask for metrics of "
+            f"different datasets in separate questions, and filter or group a {home} "
+            f"metric only by fields of {home} or of datasets {home} joins to"
+        )
+    repeated = _repeated(tree, root)
+    if repeated:
+        agg, joined = repeated[0].sql("clickhouse"), " and ".join(sorted(repeated[1]))
+        raise PlanError(
+            f"{label} applies {agg} to {joined} columns alone over {root} rows, "
+            f"so each {joined} row would count once per {root} row that references it. "
+            "Only MIN, MAX, ANY_VALUE, BOOL_AND, BOOL_OR and DISTINCT aggregates may "
+            "read a joined dataset on their own; this version cannot answer it"
+        )
 
 
 def _suggest(name: str, options) -> str:
@@ -201,7 +296,9 @@ class Planner:
     def plan(self, q: Query) -> exp.Select:
         if not q.metrics and not q.dimensions:
             raise PlanError("a query needs at least one metric or dimension")
-        used: set[str] = set()
+        # Query item ("metric 'x'") -> datasets it reads: picks the root, explains it.
+        touched: dict[str, set[str]] = {}
+        checked: list[tuple[str, exp.Expression]] = []  # aggregate expressions, rewritten
         selects: list[exp.Expression] = []
         group: list[exp.Expression] = []
         seen_aliases: set[str] = set()  # upper-cased: ORDER BY resolves names case-insensitively
@@ -217,23 +314,28 @@ class Planner:
 
         for ref in q.dimensions:
             ds, f = self.field_ref(ref)
-            used.add(ds.name)
+            touched.setdefault(f"dimension {ref!r}", set()).add(ds.name)
             e = self._field_expr(ds, f)
             selects.append(e.as_(alias(f.name)))
             group.append(e.copy())
 
         for name in q.metrics:
             m = self.metric(name)
-            selects.append(self.resolve(pick_expression(m.expression), used).as_(alias(m.name)))
+            label = f"metric {m.name!r}"
+            tree = self.resolve(pick_expression(m.expression), touched.setdefault(label, set()))
+            checked.append((label, rewrite_tree(tree)))
+            selects.append(tree.as_(alias(m.name)))
 
         where: list[exp.Expression] = []
         having: list[exp.Expression] = []  # filters over aggregates or metric names
         # Rewrite before inspecting: APPROX_PERCENTILE is a plain function name to
         # SQLGlot and an aggregate only after rewrite. rewrite is idempotent, so
         # the final pass over the whole SELECT leaves these nodes as they are.
-        grouped = {e.transform(rewrite).sql() for e in group}
+        grouped = {rewrite_tree(e).sql() for e in group}
         for f in q.filters:
-            tree = self.resolve(f, used, metrics=True).transform(rewrite)
+            label = f"filter {f!r}"
+            tree = self.resolve(f, touched.setdefault(label, set()), metrics=True)
+            tree = rewrite_tree(tree)
             if tree.find(exp.Window):
                 raise PlanError(
                     f"filter {f!r} uses a window function; a window metric cannot be "
@@ -255,8 +357,12 @@ class Planner:
                         "dimension of this query; add it to dimensions or put it in its own filter"
                     )
             having.append(tree)
+            checked.append((label, tree))
 
+        used = set().union(*touched.values())
         root = self._root(used)
+        for label, tree in checked:
+            _check_rows(label, tree, root.name, touched)
         sel = exp.select(*selects).from_(self._table(root))
         dict_keys: dict[str, exp.Expression] = {}  # dictionary dataset -> key expression
         for name in sorted(used - {root.name}):
@@ -297,7 +403,7 @@ class Planner:
         sel.set(
             "settings", [exp.EQ(this=exp.var("join_use_nulls"), expression=exp.Literal.number(1))]
         )
-        return sel.transform(rewrite)
+        return rewrite_tree(sel)
 
     def _order(
         self, order_by: tuple[str, ...], q: Query, selects: list[exp.Expression]

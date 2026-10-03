@@ -49,6 +49,29 @@ direct relationships to every other dataset it touches. Chains through an
 intermediate dataset and questions across two fact tables are not
 supported yet; see the README.
 
+Metrics are computed over the root's rows, so each row of a joined
+dataset appears once per root row that references it, and only if one
+does. The planner refuses what that would get wrong:
+
+- An aggregate that reads only joined datasets, unless repeats do not
+  change it: `MIN`, `MAX`, `ANY_VALUE`, `BOOL_AND`, `BOOL_OR` or
+  `DISTINCT`. `SUM(store.s_number_employees)` over sales would count a
+  store's staff once per sale. An argument that mixes root and joined
+  columns is computed once per root row and is fine:
+  `SUM(lines.qty * products.price)`.
+- A metric that aggregates no column of the root at all, even with a
+  repeat-safe aggregate. `COUNT(DISTINCT sessions.user_id)` in a question
+  whose root is purchases (because of a purchases metric, dimension or
+  filter) counts only users with a purchase.
+
+`COUNT(DISTINCT customer.id)` next to a sales column, as in
+`SUM(sales.amount) / COUNT(DISTINCT customer.id)`, passes: it is about the
+customers who bought, which is what such a metric means. A metric that
+sums columns of two datasets, such as sales per employee written as
+`SUM(sales.amount) / SUM(store.employees)`, is refused in every question
+and reported by `validate`. To filter one dataset's metric by another
+dataset, give the first a field for it (`sessions.has_purchase`).
+
 ## Expressions
 
 Each field and metric carries expressions in one or more dialects.
@@ -68,7 +91,8 @@ float division by zero and a one-row `STDDEV` come back as NULL, not
 Subqueries and statements inside an expression are rejected.
 
 Window functions over aggregates (`RANK() OVER (...)`, `LAG(SUM(x))`)
-pass through in the same `SELECT`. The spec cannot say which grain a
+pass through in the same `SELECT`; their `PARTITION BY` and `ORDER BY`
+columns are grouping keys and may come from any joined dataset. The spec cannot say which grain a
 window metric needs, so the question has to supply the right dimensions.
 A window metric cannot be used in a filter (ClickHouse does not allow a
 window function in `HAVING`); the planner rejects it with a message.
