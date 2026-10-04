@@ -7,7 +7,7 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
-## [0.2.1] - 2026-10-03
+## [0.2.1] - 2026-10-04
 
 ### Changed
 
