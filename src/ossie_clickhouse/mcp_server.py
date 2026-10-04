@@ -12,7 +12,6 @@ identity to a ClickHouse connection.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
 from importlib.metadata import version
 from typing import Any
@@ -149,14 +148,13 @@ def build_server(
         raise ImportError("MCP support needs the extra: pip install 'ossie-clickhouse[mcp]'") from e
 
     executor = Executor(client_factory(), model, policy)
-    # stderr: stdout carries the protocol. Names the database bare sources read.
-    print(f"ossie-clickhouse: model {model.name!r} on {executor.location}", file=sys.stderr)
     m = executor.model  # trimmed to what the connected user may see
     server = MCPServer(
         "ossie-clickhouse",
         version=version("ossie-clickhouse"),
         instructions=instructions(m),
     )
+    server.location = executor.location  # for `serve` to print
 
     @server.tool()
     def list_model() -> dict[str, Any]:

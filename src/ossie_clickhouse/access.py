@@ -73,7 +73,7 @@ class Policy:
         return h
 
 
-def restrict(model: OssieDocument, hidden: Hidden) -> OssieDocument:
+def restrict(model: OssieDocument, hidden: Hidden, reader: str = "here") -> OssieDocument:
     """The model without the hidden objects and everything that depends on them."""
     ds_hidden = {d.upper() for d in hidden.datasets}
     f_hidden = {f.upper() for f in hidden.fields}
@@ -88,7 +88,7 @@ def restrict(model: OssieDocument, hidden: Hidden) -> OssieDocument:
     data["datasets"] = [d for d in data["datasets"] if d["name"].upper() not in ds_hidden]
     if not data["datasets"]:
         raise PlanError(
-            "none of the model's datasets is readable here; check the ClickHouse URL, "
+            f"none of the model's datasets is readable {reader}; check the ClickHouse URL, "
             "database and the connected user's grants"
         )
     for d in data["datasets"]:
