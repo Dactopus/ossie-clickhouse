@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-04
+
 ### Fixed
 
 - A source without a database is introspected where ClickHouse reads it:
