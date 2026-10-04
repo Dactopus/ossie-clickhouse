@@ -7,6 +7,23 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Fixed
+
+- A source without a database is introspected where ClickHouse reads it:
+  the URL's database, else the user's `DEFAULT DATABASE`. Introspection
+  used to look in `default`, so such a user with no database in the URL
+  got a refusal, or, with a copy of the table in `default`, the wrong
+  engine: a ReplacingMergeTree read without `FINAL` counted its
+  duplicates.
+
+### Changed
+
+- A source may be a bare table name, read in the connection's database;
+  documented in `docs/model-authoring.md` and tested. One model then
+  serves any database a deployment chooses.
+- `validate --url` and `serve` (on stderr) name the host and database
+  they read, and so does the refusal when no dataset is readable.
+
 ## [0.2.1] - 2026-10-04
 
 ### Changed

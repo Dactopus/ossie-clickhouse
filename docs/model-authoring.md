@@ -10,10 +10,17 @@ example.
 
 ## Sources
 
-`source` is `database.table`. A three-part `database.schema.table` is
-accepted and the middle part dropped, since ClickHouse has no schema level;
-this is what lets a model written for another warehouse run unchanged. A
-query as a source is not supported.
+`source` is `table` or `database.table`. A bare `table` is read in the
+connection's database: the one in the URL path
+(`http://user:password@host:8123/analytics`), else the ClickHouse user's
+default database. Leave the database out when the deployment chooses it,
+so one model serves a database per customer, or dev and prod side by side.
+`validate --url` and `serve` print the database they read.
+
+A three-part `database.schema.table` is accepted and the middle part
+dropped, since ClickHouse has no schema level; this is what lets a model
+written for another warehouse run unchanged. A query as a source is not
+supported.
 
 ## Keys decide which joins are allowed
 

@@ -123,7 +123,9 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   each has a ClickHouse equivalent in the mapping table.
 - `EXTRACT(DAYOFWEEK | DAYOFYEAR ...)` is not accepted; use `toDayOfWeek`
   and `toDayOfYear`.
-- Table names are `database.table`; Ossie `source` may have three parts.
+- Table names are `database.table`; Ossie `source` may have three parts,
+  or one: a bare table reads `currentDatabase()` (the URL's database, else
+  the user's default), and introspection asks the server for it.
 - `REGEXP_REPLACE` replaces all matches (spec reading); `DAYOFWEEK` is ISO.
 - NULLs sort last in both directions, ClickHouse's default (the spec is
   silent): `NULL_ORDERING` on the parser dialect, `nulls_first=False` in
