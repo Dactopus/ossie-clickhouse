@@ -538,21 +538,6 @@ def _with_metrics(**expressions: str) -> Planner:
             "metric 'headcount' aggregates store rows, but this question is answered over "
             "store_sales rows (because of metric 'total_sales')",
         ),
-        # The refusal says how to ask for the same rows in two questions.
-        (
-            Query(metrics=("total_sales", "headcount"), dimensions=("store.s_state",)),
-            'filter the second question with "store.s_state IN (...)" listing the values '
-            'that answer returned, or with the single filter "store.s_state IN (...) OR '
-            'store.s_state IS NULL" if one is NULL',
-        ),
-        # Two datasets of metrics and no root among them: the same advice.
-        (
-            Query(metrics=("headcount", "items"), dimensions=("item.i_brand",)),
-            "datasets ['item', 'store'] are not joined by direct relationships from one root. "
-            "Ask for metrics of different datasets in separate questions; for the second "
-            "metric over the rows of the first answer, such as its top 5, filter the second "
-            'question with "item.i_brand IN (...)"',
-        ),
         # Even a repeat-safe aggregate is about other rows: only customers who bought.
         (
             Query(metrics=("customers",), filters=("store_sales.ss_quantity > 1",)),
@@ -606,13 +591,54 @@ def test_refuses_aggregates_over_other_rows_than_the_root(query, message):
         cnt="COUNT(*)",
         tn_stores="COUNT(*) FILTER (WHERE store.s_state = 'TN')",
         extra_staff="SUM(store_sales.ss_ext_sales_price) / SUM(store_extra.s_number_employees)",
-        items="COUNT(item.i_item_sk)",
     )
     with pytest.raises(PlanError) as e:
         planner.sql(query)
     assert message in str(e.value)
-    # Matching rows of a first answer needs two metrics and a dimension to match on.
-    assert ("IN (...)" in str(e.value)) == (len(query.metrics) > 1 and bool(query.dimensions))
+
+
+_SPLIT = ". Ask for each metric in its own question"
+
+
+@pytest.mark.parametrize(
+    ("query", "hint"),
+    [
+        # Each metric plans alone by the dimension: match the rows of the first answer.
+        (
+            Query(metrics=("total_sales", "headcount"), dimensions=("store.s_state",)),
+            _SPLIT + "; for the others over the rows of the first answer, such as its top 5, "
+            'filter them with "store.s_state IN (...)" listing the values it returned, or '
+            'with the single filter "store.s_state IN (...) OR store.s_state IS NULL" if one '
+            "is NULL",
+        ),
+        # Datasets not joined from one root, no dimension: separate questions answer it.
+        (Query(metrics=("headcount", "items")), _SPLIT),
+        # One IN list cannot pick the (state, city) pairs of the first answer.
+        (
+            Query(
+                metrics=("total_sales", "headcount"),
+                dimensions=("store.s_state", "store.s_city"),
+            ),
+            _SPLIT,
+        ),
+        # headcount cannot be grouped by item either: no split answers it.
+        (Query(metrics=("headcount", "items"), dimensions=("item.i_brand",)), None),
+        # The dimension, not the mix of metrics, is the cause.
+        (Query(metrics=("headcount", "stores"), dimensions=("store_sales.ss_quantity",)), None),
+    ],
+)
+def test_refusal_advises_a_split_only_when_it_answers(query, hint):
+    planner = _with_metrics(
+        headcount="SUM(store.s_number_employees)",
+        stores="COUNT(store.s_store_sk)",
+        items="COUNT(item.i_item_sk)",
+    )
+    with pytest.raises(PlanError) as e:
+        planner.sql(query)
+    if hint is None:
+        assert _SPLIT not in str(e.value)
+    else:
+        assert str(e.value).endswith(hint)
 
 
 @pytest.mark.parametrize(
