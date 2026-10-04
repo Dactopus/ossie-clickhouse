@@ -77,7 +77,10 @@ def _run(args: argparse.Namespace) -> int:
     if args.command == "serve":
         from ossie_clickhouse.mcp_server import build_server
 
-        server = build_server(load_model(args.model), lambda: connect(args.url), policy)
+        model = load_model(args.model)
+        server = build_server(model, lambda: connect(args.url), policy)
+        # stderr: stdout carries the protocol.
+        print(f"ossie-clickhouse: model {model.name!r} on {server.location}", file=sys.stderr)
         server.run()  # stdio
         return 0
 

@@ -69,8 +69,10 @@ class Executor:
         self.user, self.roles, self.database = self.client.query(
             "SELECT currentUser(), enabledRoles(), currentDatabase()"
         ).result_rows[0]
-        self.location = f"{self.client.url}/{self.database}"  # no credentials
         self.catalog = self.introspect()
+        # The databases the model reads, not the connection's: no credentials, and
+        # not joined to the URL, whose path may be a proxy's.
+        self.location = f"{self.client.url} (database {', '.join(self.databases) or self.database})"
         # Metrics no question can answer are hidden too: an agent would only
         # spend a turn on each. validate reports them.
         hidden = self._hidden_by_grants() | Hidden(
@@ -79,10 +81,7 @@ class Executor:
         )
         if policy:
             hidden |= policy.hidden_for(self.user, list(self.roles))
-        try:
-            self.model = restrict(model, hidden)
-        except PlanError as e:
-            raise PlanError(f"{e} (read {self.location} as {self.user!r})") from None
+        self.model = restrict(model, hidden, reader=f"by {self.user!r} on {self.location}")
         self.planner = Planner(self.model, self.catalog)
 
     def _hidden_by_grants(self) -> Hidden:
@@ -127,6 +126,7 @@ class Executor:
             except PlanError:
                 continue
             tables.setdefault((t.db or self.database, t.name), []).append(ds)
+        self.databases = sorted({db for db, _ in tables})
         if not tables:
             return {}
         params = {"pairs": list(tables)}  # bound server-side: names never enter SQL text

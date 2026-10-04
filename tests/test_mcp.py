@@ -115,6 +115,18 @@ def test_server_reports_the_package_version(tpcds):
     assert build_server(MODEL, lambda: tpcds).version == version("ossie-clickhouse")
 
 
+def test_serve_names_the_database_on_stderr(tpcds, monkeypatch, capsys):
+    from mcp.server import MCPServer
+
+    from ossie_clickhouse.cli import main
+
+    monkeypatch.setattr(MCPServer, "run", lambda self: None)
+    assert main(["serve", str(FIXTURE), "--url", tpcds.url]) == 0
+    out = capsys.readouterr()
+    assert out.out == ""  # stdout carries the protocol
+    assert out.err.endswith(f"on {tpcds.url} (database tpcds)\n")
+
+
 @pytest.mark.anyio
 async def test_tools_listed(client):
     tools = await client.list_tools()

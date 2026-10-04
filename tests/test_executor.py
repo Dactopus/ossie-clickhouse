@@ -119,12 +119,18 @@ def test_bare_source_reads_the_url_database(ex, tmp_path, capsys):
     p.write_text(FIXTURE.read_text().replace("source: ossie_test.", "source: "))
     url = f"{ex.client.url}/ossie_test"
     assert main(["validate", str(p), "--url", url]) == 0
-    assert capsys.readouterr().out.endswith(f" against {url}\n")
+    assert capsys.readouterr().out.endswith(f" against {ex.client.url} (database ossie_test)\n")
     assert main(["query", str(p), "-m", "revenue", "-d", "country.name", "--url", url]) == 0
     assert "Germany\t15.0" in capsys.readouterr().out  # deduplicated, dictionary found
-    # Without a database the user's default is read, and the refusal names it.
-    assert main(["query", str(p), "-m", "revenue", "--url", ex.client.url]) == 1
-    assert f"(read {ex.location} as " in capsys.readouterr().err
+    # A database without the tables: the refusal names it.
+    ex.client.command("CREATE DATABASE IF NOT EXISTS ossie_empty")
+    try:
+        assert (
+            main(["query", str(p), "-m", "revenue", "--url", f"{ex.client.url}/ossie_empty"]) == 1
+        )
+    finally:
+        ex.client.command("DROP DATABASE ossie_empty")
+    assert "(database ossie_empty); check" in capsys.readouterr().err
 
 
 def test_query_sources_are_not_introspected(ex, tmp_path):
