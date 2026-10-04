@@ -17,11 +17,12 @@ a minor release may change the Python API.
 - The MCP server's instructions tell the agent to state only numbers a
   query returned. Agents named the value of a metric they had not queried
   and made up the counts behind a rate.
-- Refusals of a question that mixes metrics of different datasets say how
-  to answer it in two: ask for the first metric, then for the second with
-  a filter such as `sessions.source IN (...)` over the values the first
-  answer returned. The refusal for datasets not joined from one root used
-  to give no advice at all.
+- A refused question with several metrics, each of which can be asked on
+  its own, says so. With one dimension it also says how to keep the rows
+  of the first answer: filter the other questions with
+  `sessions.source IN (...)` over the values that answer returned. The
+  refusal for datasets not joined from one root used to give no advice
+  at all.
 
 ## [0.2.0] - 2026-10-03
 

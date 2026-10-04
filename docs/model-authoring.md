@@ -176,9 +176,9 @@ what agents see through `list_model`, `search_model` and
 `describe_object`. The model's own `ai_context.instructions` also go into
 the MCP server's instructions, which agents get before any tool call.
 Write there what is true of this model's data; rules for any model, such
-as not stating numbers no query returned, are the server's already. An agent that reads "gross sales" finds `total_sales`
-only if the synonym is there. Write them for the reader who does not know
-the schema.
+as not stating numbers no query returned, are the server's already. An
+agent that reads "gross sales" finds `total_sales` only if the synonym is
+there. Write them for the reader who does not know the schema.
 
 ## Validation
 
