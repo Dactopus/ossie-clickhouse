@@ -38,7 +38,8 @@ Point it at a model and a ClickHouse. The
 [TPC-DS reference model](https://github.com/apache/ossie/blob/main/examples/tpcds_semantic_model.yaml)
 from the Ossie repository is in [tests/fixtures/tpcds.yaml](tests/fixtures/tpcds.yaml).
 ClickHouse credentials go in the URL or in `OSSIE_CLICKHOUSE_URL`
-(default `http://127.0.0.1:8123`).
+(default `http://127.0.0.1:8123`). A database in the URL path
+(`.../analytics`) is where a model's sources without a database are read.
 
 ```bash
 ossie-clickhouse validate model.yaml --url http://user:password@host:8123

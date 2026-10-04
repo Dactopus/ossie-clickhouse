@@ -16,7 +16,7 @@ from tests.conftest import unavailable
 from tests.test_executor import FIXTURE, SETUP
 
 USERS = """
-DROP USER IF EXISTS ossie_analyst, ossie_clerk;
+DROP USER IF EXISTS ossie_analyst, ossie_clerk, ossie_local;
 DROP ROLE IF EXISTS ossie_sales;
 DROP ROW POLICY IF EXISTS de_only ON ossie_test.orders;
 CREATE ROLE ossie_sales;
@@ -28,6 +28,8 @@ CREATE ROW POLICY de_only ON ossie_test.orders FOR SELECT
 CREATE USER ossie_clerk IDENTIFIED WITH no_password;
 GRANT SELECT(order_id, amount) ON ossie_test.orders TO ossie_clerk;
 GRANT SELECT ON ossie_test.country TO ossie_clerk;
+CREATE USER ossie_local IDENTIFIED WITH no_password DEFAULT DATABASE ossie_test;
+GRANT SELECT ON ossie_test.* TO ossie_local;
 """
 POLICY = Path(__file__).parent / "fixtures" / "policy.yaml"
 
@@ -100,7 +102,7 @@ def admin(clickhouse):
     yield clickhouse
     clickhouse.command("DROP ROW POLICY IF EXISTS de_only ON ossie_test.orders")
     clickhouse.command("DROP DATABASE ossie_test")
-    clickhouse.command("DROP USER IF EXISTS ossie_analyst, ossie_clerk")
+    clickhouse.command("DROP USER IF EXISTS ossie_analyst, ossie_clerk, ossie_local")
     clickhouse.command("DROP ROLE IF EXISTS ossie_sales")
 
 
@@ -143,3 +145,14 @@ def test_policy_file_hides_metric_for_role(admin):
         ex.execute(Query(metrics=("spread",)))
     unrestricted = Executor(admin, load_model(FIXTURE), Policy.load(POLICY))
     assert "spread" in {m.name for m in unrestricted.model.metrics}
+
+
+def test_bare_source_reads_the_users_default_database(admin, tmp_path):
+    # No database in the URL: ClickHouse reads the user's DEFAULT DATABASE, so
+    # introspection must too, or it misses the ReplacingMergeTree and its FINAL.
+    p = tmp_path / "bare.yaml"
+    p.write_text(FIXTURE.read_text().replace("source: ossie_test.", "source: "))
+    ex = Executor(as_user(admin, "ossie_local"), load_model(p))
+    assert ex.database == "ossie_test"
+    r = ex.execute(Query(metrics=("revenue",)))
+    assert "FINAL" in r.sql and r.rows == [(65.0,)]

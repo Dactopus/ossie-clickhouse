@@ -122,7 +122,7 @@ def _run(args: argparse.Namespace) -> int:
     where = ""
     if ex:
         problems += ex.check()
-        where = f" against {ex.client.url}"  # never args.url: it may carry the password
+        where = f" against {ex.location}"  # never args.url: it may carry the password
     for p in problems:
         print(f"error: {p}", file=sys.stderr)
     if problems:
@@ -132,7 +132,7 @@ def _run(args: argparse.Namespace) -> int:
     print(
         f"{args.model}: ok ({doc.name}, version {doc.version}, "
         f"{len(doc.datasets)} datasets, {n_fields} fields, "
-        f"{len(doc.relationships or [])} relationships, {len(doc.metrics or [])} metrics)"
+        f"{len(doc.relationships or [])} relationships, {len(doc.metrics or [])} metrics){where}"
     )
     return 0
 

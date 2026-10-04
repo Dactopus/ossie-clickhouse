@@ -114,6 +114,19 @@ def test_check_reports_database_level_problems(ex, tmp_path):
     assert main(["validate", str(p), "--url", ex.client.url]) == 1
 
 
+def test_bare_source_reads_the_url_database(ex, tmp_path, capsys):
+    p = tmp_path / "bare.yaml"
+    p.write_text(FIXTURE.read_text().replace("source: ossie_test.", "source: "))
+    url = f"{ex.client.url}/ossie_test"
+    assert main(["validate", str(p), "--url", url]) == 0
+    assert capsys.readouterr().out.endswith(f" against {url}\n")
+    assert main(["query", str(p), "-m", "revenue", "-d", "country.name", "--url", url]) == 0
+    assert "Germany\t15.0" in capsys.readouterr().out  # deduplicated, dictionary found
+    # Without a database the user's default is read, and the refusal names it.
+    assert main(["query", str(p), "-m", "revenue", "--url", ex.client.url]) == 1
+    assert f"(read {ex.location} as " in capsys.readouterr().err
+
+
 def test_query_sources_are_not_introspected(ex, tmp_path):
     p = tmp_path / "query.yaml"
     p.write_text(re.sub(r"source: ossie_test\.\w+", "source: SELECT 1", FIXTURE.read_text()))

@@ -64,10 +64,13 @@ class Executor:
         self.client = client
         self.full_model = model
         self.untranslatable_fields, self.untranslatable_metrics = untranslatable(model)
-        self.catalog = self.introspect()
-        self.user, self.roles = self.client.query(
-            "SELECT currentUser(), enabledRoles()"
+        # A source without a database reads currentDatabase(): the URL's database,
+        # else the user's DEFAULT DATABASE. Introspection must look in the same place.
+        self.user, self.roles, self.database = self.client.query(
+            "SELECT currentUser(), enabledRoles(), currentDatabase()"
         ).result_rows[0]
+        self.location = f"{self.client.url}/{self.database}"  # no credentials
+        self.catalog = self.introspect()
         # Metrics no question can answer are hidden too: an agent would only
         # spend a turn on each. validate reports them.
         hidden = self._hidden_by_grants() | Hidden(
@@ -76,7 +79,10 @@ class Executor:
         )
         if policy:
             hidden |= policy.hidden_for(self.user, list(self.roles))
-        self.model = restrict(model, hidden)
+        try:
+            self.model = restrict(model, hidden)
+        except PlanError as e:
+            raise PlanError(f"{e} (read {self.location} as {self.user!r})") from None
         self.planner = Planner(self.model, self.catalog)
 
     def _hidden_by_grants(self) -> Hidden:
@@ -120,7 +126,7 @@ class Executor:
                 t = source_table(ds.source)
             except PlanError:
                 continue
-            tables.setdefault((t.db or self.client.database or "default", t.name), []).append(ds)
+            tables.setdefault((t.db or self.database, t.name), []).append(ds)
         if not tables:
             return {}
         params = {"pairs": list(tables)}  # bound server-side: names never enter SQL text
