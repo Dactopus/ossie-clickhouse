@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-05
+
 ### Added
 
 - A diagram of how a question becomes SQL in the README, linked to an
