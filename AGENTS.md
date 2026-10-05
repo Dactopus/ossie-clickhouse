@@ -128,9 +128,11 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   the user's default), and introspection asks the server for it. Parts
   may be quoted (`` ` `` or `"`, a doubled quote inside); unquoted text
   between dots is the name as written (`t$x`, `t#1`). `_parts` splits it
-  with regexes, not SQLGlot's tokenizer. Refused: `--`, `/*`, `;` or a
-  stray quote outside quotes, and `\` anywhere: ClickHouse reads it as
-  an escape in quoted names, and `_parts` does not decode escapes.
+  with regexes, not SQLGlot's tokenizer. A space or parenthesis outside
+  quotes, strings and comments marks a query, checked first so a query
+  is reported as one. Refused: `--`, `/*`, `;` or a stray quote outside
+  quotes, and `\` anywhere: ClickHouse reads it as an escape in quoted
+  names, and `_parts` does not decode escapes.
 - `dictGet*` takes the dictionary's name unquoted and splits it on dots,
   in string and identifier form alike: a dictionary whose name or
   database has a dot is joined as a table.

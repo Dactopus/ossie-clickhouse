@@ -29,11 +29,14 @@ class PlanError(ValueError):
     pass
 
 
-_QUOTED = re.compile(r"`(?:[^`]|``)*`|\"(?:[^\"]|\"\")*\"")
-# A non-empty quoted identifier, or unquoted text without a quote, space, `;`,
-# parenthesis or dot.
-_PART = re.compile(r"`(?:[^`]|``)+`|\"(?:[^\"]|\"\")+\"|[^\s`\"'();.]+")
+_QUOTED = r"`(?:[^`]|``)+`|\"(?:[^\"]|\"\")+\""  # non-empty, a doubled quote inside
+# A quoted identifier, or unquoted text without a quote, space, `;`, parenthesis
+# or dot.
+_PART = re.compile(rf"{_QUOTED}|[^\s`\"'();.]+")
 _SOURCE = re.compile(rf"(?:{_PART.pattern})(?:\.(?:{_PART.pattern})){{0,2}}")
+# Where a space or parenthesis does not mark a query: quoted names and string
+# literals (group 1), comments.
+_INERT = re.compile(rf"({_QUOTED}|'(?:[^'\\]|\\.|'')*')|--.*|/\*[\s\S]*?\*/")
 
 
 @dataclass(frozen=True)
@@ -79,17 +82,16 @@ def _parts(source: str) -> tuple[tuple[str, bool], ...]:
 
     A part is one quoted identifier (a doubled quote stands for itself) or
     unquoted text taken as the name it spells, as 0.2.3 did: `t$x`, `t#1`,
-    `select`, `x-y`. Whitespace or a parenthesis outside quotes marks a query.
+    `select`, `x-y`. Whitespace or a parenthesis outside quotes, strings and
+    comments marks a query, checked first so a query is reported as one.
     Refused rather than read as some other table: `--` or `/*` outside quotes
     (a comment pasted in), `;` or an unclosed quote, and `\\` anywhere: in a
     quoted name ClickHouse reads it as an escape, which is not decoded here."""
     s = source.strip()
-    bare = _QUOTED.sub("_", s)
-    if "\\" in s or re.search(r"--|/\*|;|[`\"]", bare):
-        raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
-    if re.search(r"[\s()]", bare):
+    text = _INERT.sub(lambda m: "_" if m[1] else "", s).strip()
+    if not re.search(r"[`\"]", text) and re.search(r"[\s()]", text):
         raise PlanError(f"query sources are not supported yet: {source!r}")
-    if not _SOURCE.fullmatch(s):
+    if "\\" in s or re.search(r"--|/\*", re.sub(_QUOTED, "_", s)) or not _SOURCE.fullmatch(s):
         raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
     return tuple(
         (p[1:-1].replace(p[0] * 2, p[0]), True) if p[0] in '`"' else (p, False)

@@ -89,6 +89,8 @@ def test_translate_uses_picked_dialect():
         ("STDDEV(x)", "stddevSamp(x)"),
         ("LENGTH(s)", "CHAR_LENGTH(s)"),
         ("store_sales.ss_ext_sales_price", "store_sales.ss_ext_sales_price"),
+        # ClickHouse reads `\` in a quoted name as an escape: doubled, or "a\x41" is aA
+        ('"a\\x41"', '"a\\\\x41"'),
     ],
 )
 def test_to_clickhouse(ossie, expected):

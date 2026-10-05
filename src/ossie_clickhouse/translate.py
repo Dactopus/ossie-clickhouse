@@ -216,12 +216,16 @@ def parse(expression: str) -> exp.Expression:
 # --- ClickHouse rewrites ----------------------------------------------------
 
 
+# ClickHouse reads `\` in a quoted name as an escape ("a\x41" is aA); SQLGlot
+# 30.21 emits it as is, so the SQL would name another object. Asked, not
+# assumed: a release that escapes it would otherwise get it escaped twice.
+_RAW_BACKSLASH = exp.to_identifier("\\", quoted=True).sql("clickhouse") == '"\\"'
+
+
 class _ClickHouse(ClickHouse):
     class Generator(ClickHouse.Generator):
         def identifier_sql(self, expression: exp.Identifier) -> str:
-            # ClickHouse reads `\` in a quoted name as an escape ("a\x41" is aA);
-            # SQLGlot emits it as is (30.21), so the SQL would name another object.
-            if "\\" in expression.name:
+            if _RAW_BACKSLASH and "\\" in expression.name:
                 name = expression.name.replace("\\", "\\\\")
                 expression = exp.to_identifier(name, quoted=True)
             return super().identifier_sql(expression)

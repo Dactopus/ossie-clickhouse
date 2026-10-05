@@ -11,6 +11,7 @@ from ossie_clickhouse.planner import (
     source_table,
     unanswerable_metrics,
 )
+from ossie_clickhouse.translate import CLICKHOUSE
 from tests.test_model import FIXTURE
 
 MODEL = load_model(FIXTURE)
@@ -21,18 +22,31 @@ def test_source_table():
     assert source_table("tpcds.public.store_sales").sql() == "tpcds.store_sales"
     assert source_table("db.t").sql() == "db.t"
     assert source_table("t").sql() == "t"
-    assert source_table("db.select").sql(dialect="clickhouse") == "db.select"
-    assert source_table("db.x-y").sql(dialect="clickhouse") == 'db."x-y"'
+    assert source_table("db.select").sql(dialect=CLICKHOUSE) == "db.select"
+    assert source_table("db.x-y").sql(dialect=CLICKHOUSE) == 'db."x-y"'
     # Unquoted text is the name it spells, as in 0.2.3, next to quoted parts too.
-    assert source_table("db.t$x").sql(dialect="clickhouse") == 'db."t$x"'
-    assert source_table("db.t#1").sql(dialect="clickhouse") == 'db."t#1"'
-    assert source_table('"my db".t$x').sql(dialect="clickhouse") == '"my db"."t$x"'
-    assert source_table("`shop`.t#1").sql(dialect="clickhouse") == '"shop"."t#1"'
+    assert source_table("db.t$x").sql(dialect=CLICKHOUSE) == 'db."t$x"'
+    assert source_table("db.t#1").sql(dialect=CLICKHOUSE) == 'db."t#1"'
+    assert source_table('"my db".t$x').sql(dialect=CLICKHOUSE) == '"my db"."t$x"'
+    assert source_table("`shop`.t#1").sql(dialect=CLICKHOUSE) == '"shop"."t#1"'
     assert source_table("  db.t ").sql() == "db.t"
 
 
 @pytest.mark.parametrize(
-    "source", ["SELECT * FROM t", "db.t x", "db . t", "numbers(10)", "s3('x')", "db.t(1)"]
+    "source",
+    [
+        "SELECT * FROM t",
+        "db.t x",
+        "db . t",
+        "numbers(10)",
+        "s3('x')",
+        "db.t(1)",
+        # what refuses a table name must not hide that a query is one
+        "SELECT 1;",
+        "SELECT * FROM t -- x",
+        "SELECT replaceRegexpAll(s, '\\d', '') FROM t",
+        "SELECT * FROM t WHERE s = 'say \"hi'",
+    ],
 )
 def test_query_source_refused(source):
     # Table functions included: one such dataset must not break introspection.
@@ -82,8 +96,25 @@ def test_garbled_source_refused(source):
 def test_source_table_quoted(source, db, name):
     t = source_table(source)
     assert (t.db, t.name) == (db, name)
-    assert source_table(t.sql(dialect="clickhouse")) == t  # quotes kept in SQL
+    assert source_table(t.sql(dialect=CLICKHOUSE)) == t  # quotes kept in SQL
     assert source_name(source) == f"{db}.{name}"
+
+
+def test_backslash_in_a_column_name(tmp_path):
+    # ClickHouse reads `\` in a quoted name as an escape: emitted as written,
+    # "a\x41" would read column aA. The server-side check is in test_executor.
+    p = tmp_path / "esc.yaml"
+    p.write_text(
+        'version: "0.2.0.dev0"\nname: esc\ndatasets:\n'
+        "  - name: esc\n    source: db.esc\n    fields:\n"
+        "      - name: v\n"
+        "        expression: {dialects: [{dialect: ANSI_SQL, expression: '\"a\\x41\"'}]}\n"
+        "metrics:\n"
+        "  - name: total\n"
+        "    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(esc.v)}]}\n"
+    )
+    sql = Planner(load_model(p)).sql(Query(metrics=("total",), dimensions=("esc.v",)))
+    assert sql.startswith('SELECT esc."a\\\\x41" AS v, SUM(esc."a\\\\x41") AS total FROM')
 
 
 def test_single_dataset_no_join():
