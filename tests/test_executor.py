@@ -153,7 +153,7 @@ def test_nan_and_inf_become_none(ex):
 @pytest.mark.parametrize(
     "source, problem",
     [
-        ("ossie_test.`o'brien\\x`", "not found in ClickHouse"),
+        ("ossie_test.`o'brien x`", "not found in ClickHouse"),
         ("ossie_test.o'brien\\x", "cannot map source"),
         ("numbers(10)", "query sources are not supported yet: 'numbers(10)'"),
     ],

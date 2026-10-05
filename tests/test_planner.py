@@ -23,6 +23,11 @@ def test_source_table():
     assert source_table("t").sql() == "t"
     assert source_table("db.select").sql(dialect="clickhouse") == "db.select"
     assert source_table("db.x-y").sql(dialect="clickhouse") == 'db."x-y"'
+    # Unquoted text is the name it spells, as in 0.2.3, next to quoted parts too.
+    assert source_table("db.t$x").sql(dialect="clickhouse") == 'db."t$x"'
+    assert source_table("db.t#1").sql(dialect="clickhouse") == 'db."t#1"'
+    assert source_table('"my db".t$x').sql(dialect="clickhouse") == '"my db"."t$x"'
+    assert source_table("`shop`.t#1").sql(dialect="clickhouse") == '"shop"."t#1"'
     assert source_table("  db.t ").sql() == "db.t"
 
 
@@ -48,7 +53,13 @@ def test_query_source_refused(source):
         "db.t;",
         "db.t -- legacy",
         "/* x */ db.t",
-        "db.o'brien\\x",
+        "db.t--legacy",
+        "db.t/*x*/",
+        "db.o'brien",
+        '"my db.t',
+        "db.a\\",
+        "`db`.`a\\x41`",  # ClickHouse reads `aA`; emitted unescaped, it would differ
+        'db."t',
     ],
 )
 def test_garbled_source_refused(source):
@@ -64,6 +75,8 @@ def test_garbled_source_refused(source):
         ("`my.db`.`orders`", "my.db", "orders"),
         ('"Sales DB".orders', "Sales DB", "orders"),
         ('`a`."b.c".`t`', "a", "t"),
+        ('"a""b".`c``d`', 'a"b', "c`d"),
+        ("`x (1)`.`t--1;`", "x (1)", "t--1;"),
     ],
 )
 def test_source_table_quoted(source, db, name):
