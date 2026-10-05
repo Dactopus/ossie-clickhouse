@@ -1,0 +1,406 @@
+# A copy of entities/web_analytics.yaml from
+# https://github.com/Dactopus/dactopus-data-models at 7c8d0fd, for the
+# walkthrough in docs/index.html. It need not follow upstream changes.
+version: "0.2.0.dev0"
+
+name: web_analytics
+description: >
+  Website behaviour of an online store: events, sessions and the purchases
+  web analytics recorded. Built from Google Analytics 4 (GA4) by the
+  sources/ga4 package.
+ai_context:
+  instructions: >
+    Purchases and revenue here are what web analytics recorded on the site,
+    not the store's orders: they miss purchases made with tracking blocked
+    and may differ from the store's own figures. Say so when someone
+    compares them with sales. Dates are in the GA4 property's time zone.
+    A user is a browser on a device (GA4 user_pseudo_id), not a person.
+    Session and user counts are exact; the GA4 interface estimates them, so
+    its numbers can be slightly different. "Conversion rate" without a
+    qualifier means session_conversion_rate; name the definition in the
+    answer and mention user_conversion_rate by name, giving its value only
+    if you queried it. Revenue, tax, shipping and average_order_value are
+    in the currency the site sent with each purchase (purchases.currency),
+    which GA4 calls "local currency". Query revenue and average_order_value
+    with purchases.currency as a dimension. With one currency, answer in it
+    and name its code. With several, give each currency separately and
+    offer revenue_usd for a single total; never add up amounts in
+    different currencies. Use revenue_usd also when asked for US dollars.
+    Name the currency by the code purchases.currency returns; do not guess
+    a currency sign.
+
+datasets:
+  - name: sessions
+    source: sessions
+    primary_key: [session_key]
+    description: >
+      One row per visit to the site. A session ends after 30 minutes without
+      activity; it belongs to the date it started on.
+    ai_context:
+      synonyms: [visits, sessions, traffic]
+    fields:
+      - name: session_key
+        expression: {dialects: [{dialect: ANSI_SQL, expression: session_key}]}
+        description: Identifier of the session, unique across users.
+        datatype: String
+      - name: user_pseudo_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: user_pseudo_id}]}
+        description: >
+          Identifier of the browser on a device that made the visit. One person
+          on a phone and a laptop is two of these.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [visitor, user, client id]
+      - name: session_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: session_date}]}
+        description: Date the session started, in the GA4 property's time zone.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [date, day, visit date]
+      - name: session_week
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "DATE_TRUNC('week', session_date)"}]}
+        description: First day (Monday) of the week the session started in.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [week]
+      - name: session_month
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "DATE_TRUNC('month', session_date)"}]}
+        description: First day of the month the session started in.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [month]
+      - name: session_start_time
+        expression: {dialects: [{dialect: ANSI_SQL, expression: session_start_time}]}
+        description: Time of the session's first event, UTC.
+        datatype: DateTimeTz
+        dimension: {is_time: true}
+      - name: is_engaged
+        expression: {dialects: [{dialect: ANSI_SQL, expression: is_engaged = 1}]}
+        description: >
+          Whether GA4 counted the session as engaged: it lasted more than 10
+          seconds, had a key event or viewed two or more pages.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [engaged, engaged session]
+      - name: has_purchase
+        expression: {dialects: [{dialect: ANSI_SQL, expression: has_purchase = 1}]}
+        description: Whether the session included at least one purchase.
+        datatype: Boolean
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [converted, converting session, bought]
+      - name: page_views
+        expression: {dialects: [{dialect: ANSI_SQL, expression: page_views}]}
+        description: Number of pages viewed in the session.
+        datatype: Integer
+      - name: source
+        expression: {dialects: [{dialect: ANSI_SQL, expression: source}]}
+        description: >
+          Where the session came from (google, newsletter, a referring site),
+          credited like the GA4 interface's session source: the last
+          non-direct click. In exports from before October 2024 it is the
+          first source seen in the session, so a returning direct visit shows
+          (direct) where GA4 would credit an earlier source. (not set) means
+          no source was recorded. A source covers all its mediums: google
+          is organic and paid search together; use source_medium or medium
+          to tell them apart.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [traffic source, referrer, session source, utm_source]
+      - name: medium
+        expression: {dialects: [{dialect: ANSI_SQL, expression: medium}]}
+        description: >
+          Kind of traffic: organic, cpc (paid search), referral, email,
+          (none) for direct visits. Credited the same way as source.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [traffic medium, channel, utm_medium]
+      - name: source_medium
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "source || ' / ' || medium"}]}
+        description: Source and medium together, as GA4 shows them (google / organic).
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [source / medium]
+      - name: campaign
+        expression: {dialects: [{dialect: ANSI_SQL, expression: campaign}]}
+        description: Marketing campaign of the session, credited the same way as source.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [utm_campaign, campaign name]
+      - name: landing_page
+        expression: {dialects: [{dialect: ANSI_SQL, expression: landing_page}]}
+        description: Full URL of the first page viewed in the session.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [entry page, landing URL]
+      - name: device_category
+        expression: {dialects: [{dialect: ANSI_SQL, expression: device_category}]}
+        description: desktop, mobile or tablet.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [device, device type, platform]
+      - name: country
+        expression: {dialects: [{dialect: ANSI_SQL, expression: country}]}
+        description: Country of the visitor, from the IP address.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [geo, location]
+
+  - name: purchases
+    source: purchases
+    primary_key: [purchase_key]
+    description: >
+      One row per purchase recorded by web analytics. A thank-you page
+      reloaded or opened twice sends the same purchase again; repeats with
+      the same transaction id from the same user count once, as in GA4.
+    ai_context:
+      synonyms: [transactions, orders, conversions, sales]
+    fields:
+      - name: purchase_key
+        expression: {dialects: [{dialect: ANSI_SQL, expression: purchase_key}]}
+        description: Identifier of the purchase.
+        datatype: String
+      - name: transaction_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: transaction_id}]}
+        description: >
+          Order number the site sent with the purchase. Empty when the site
+          did not send one; such purchases cannot be matched to store orders.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [order id, order number]
+      - name: session_key
+        expression: {dialects: [{dialect: ANSI_SQL, expression: session_key}]}
+        description: Session the purchase happened in.
+        datatype: String
+      - name: purchase_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: purchase_date}]}
+        description: Date of the purchase, in the GA4 property's time zone.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [date, order date, day]
+      - name: purchase_week
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "DATE_TRUNC('week', purchase_date)"}]}
+        description: First day (Monday) of the week of the purchase.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [week]
+      - name: purchase_month
+        expression: {dialects: [{dialect: ANSI_SQL, expression: "DATE_TRUNC('month', purchase_date)"}]}
+        description: First day of the month of the purchase.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [month]
+      - name: purchase_time
+        expression: {dialects: [{dialect: ANSI_SQL, expression: purchase_time}]}
+        description: Time of the purchase, UTC.
+        datatype: DateTimeTz
+        dimension: {is_time: true}
+      - name: revenue
+        expression: {dialects: [{dialect: ANSI_SQL, expression: revenue}]}
+        description: >
+          Order value as the site reported it, including tax and shipping, in
+          the currency of the purchase (currency field, GA4 "local
+          currency"). A store that sells in several currencies has values in
+          different currencies. Empty when the site sent no value.
+        datatype: Float
+        ai_context:
+          synonyms: [order value, purchase amount]
+      - name: currency
+        expression: {dialects: [{dialect: ANSI_SQL, expression: currency}]}
+        description: >
+          Currency of the purchase's revenue, tax and shipping: the code the
+          site sent with the purchase (ISO 4217, such as USD or EUR), as
+          sent. Empty when the site sent none, usually for a purchase
+          without a value.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [currency code, purchase currency]
+      - name: revenue_usd
+        expression: {dialects: [{dialect: ANSI_SQL, expression: revenue_usd}]}
+        description: >
+          Order value converted to US dollars by Google. Google does not
+          document the exchange rate it uses.
+        datatype: Float
+      - name: tax
+        expression: {dialects: [{dialect: ANSI_SQL, expression: tax}]}
+        description: Tax in the order, in the same currency as revenue.
+        datatype: Float
+      - name: shipping
+        expression: {dialects: [{dialect: ANSI_SQL, expression: shipping}]}
+        description: Shipping cost in the order, in the same currency as revenue.
+        datatype: Float
+
+  - name: events
+    source: events
+    description: >
+      One row per action recorded on the site: page_view, view_item,
+      add_to_cart, begin_checkout, purchase and others. Use for funnels and
+      counts of specific actions; use sessions for visits.
+    ai_context:
+      synonyms: [actions, hits, interactions]
+    fields:
+      - name: event_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: event_name}]}
+        description: >
+          What happened: page_view, view_item, add_to_cart, begin_checkout,
+          add_payment_info, purchase, session_start and others.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [action, event type]
+      - name: session_key
+        expression: {dialects: [{dialect: ANSI_SQL, expression: session_key}]}
+        description: Session the event belongs to.
+        datatype: String
+      - name: event_date
+        expression: {dialects: [{dialect: ANSI_SQL, expression: event_date}]}
+        description: Date of the event, in the GA4 property's time zone.
+        datatype: Date
+        dimension: {is_time: true}
+        ai_context:
+          synonyms: [date, day]
+      - name: event_time
+        expression: {dialects: [{dialect: ANSI_SQL, expression: event_time}]}
+        description: Time of the event, UTC.
+        datatype: DateTimeTz
+        dimension: {is_time: true}
+      - name: page_location
+        expression: {dialects: [{dialect: ANSI_SQL, expression: page_location}]}
+        description: Full URL of the page the event happened on.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [page, URL]
+      - name: page_title
+        expression: {dialects: [{dialect: ANSI_SQL, expression: page_title}]}
+        description: Title of the page the event happened on.
+        datatype: String
+        dimension: {is_time: false}
+      - name: device_category
+        expression: {dialects: [{dialect: ANSI_SQL, expression: device_category}]}
+        description: desktop, mobile or tablet.
+        datatype: String
+        dimension: {is_time: false}
+        ai_context:
+          synonyms: [device, device type]
+      - name: country
+        expression: {dialects: [{dialect: ANSI_SQL, expression: country}]}
+        description: Country of the visitor, from the IP address.
+        datatype: String
+        dimension: {is_time: false}
+
+relationships:
+  - name: purchases_to_sessions
+    from: purchases
+    to: sessions
+    from_columns: [session_key]
+    to_columns: [session_key]
+    ai_context:
+      synonyms: [purchases by traffic source, revenue by channel]
+  - name: events_to_sessions
+    from: events
+    to: sessions
+    from_columns: [session_key]
+    to_columns: [session_key]
+
+metrics:
+  - name: sessions
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(sessions.session_key)}]}
+    description: Number of visits.
+    datatype: Integer
+    ai_context:
+      synonyms: [visits, traffic, number of sessions]
+  - name: engaged_sessions
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN sessions.is_engaged THEN 1 END)"}]}
+    description: Number of engaged visits (see is_engaged).
+    datatype: Integer
+  - name: engagement_rate
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN sessions.is_engaged THEN 1 END) * 1.0 / COUNT(sessions.session_key)"}]}
+    description: Share of visits that were engaged, from 0 to 1.
+    datatype: Float
+    ai_context:
+      synonyms: [engagement]
+  - name: users
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT sessions.user_pseudo_id)}]}
+    description: >
+      Number of distinct browsers on devices that visited. Not people: one
+      person on two devices counts twice.
+    datatype: Integer
+    ai_context:
+      synonyms: [visitors, unique visitors, total users]
+  - name: session_conversion_rate
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(CASE WHEN sessions.has_purchase THEN 1 END) * 1.0 / COUNT(sessions.session_key)"}]}
+    description: >
+      Share of visits that included a purchase, from 0 to 1. The default
+      meaning of conversion rate, as in the Shopify dashboard.
+    datatype: Float
+    ai_context:
+      synonyms: [conversion rate, conversion, ecommerce conversion rate, session key event rate]
+  - name: user_conversion_rate
+    expression: {dialects: [{dialect: ANSI_SQL, expression: "COUNT(DISTINCT CASE WHEN sessions.has_purchase THEN sessions.user_pseudo_id END) * 1.0 / COUNT(DISTINCT sessions.user_pseudo_id)"}]}
+    description: >
+      Share of visitors (browsers on devices) who bought at least once in the
+      period, from 0 to 1.
+    datatype: Float
+    ai_context:
+      synonyms: [purchaser rate, user key event rate, buyer conversion]
+  - name: purchases
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(purchases.purchase_key)}]}
+    description: Number of purchases recorded on the site.
+    datatype: Integer
+    ai_context:
+      synonyms: [transactions, orders, number of orders, conversions]
+  - name: revenue
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(purchases.revenue)}]}
+    description: >
+      Total value of purchases in their currency (purchases.currency).
+      Amounts in different currencies are added as they are: break revenue
+      down by purchases.currency, or use revenue_usd for a single total.
+      Purchases the site sent without a value add nothing.
+    datatype: Float
+    ai_context:
+      synonyms: [sales, turnover, purchase revenue, total revenue, income]
+  - name: revenue_usd
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(purchases.revenue_usd)}]}
+    description: Total value of purchases in US dollars, converted by Google.
+    datatype: Float
+    ai_context:
+      synonyms: [revenue in dollars, USD revenue]
+  - name: average_order_value
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(purchases.revenue) / COUNT(purchases.revenue)}]}
+    description: >
+      Average value of a purchase over purchases that have a value, in
+      their currency (purchases.currency); break it down by currency when
+      there are several.
+    datatype: Float
+    ai_context:
+      synonyms: [AOV, average order, average check, basket size]
+  - name: events
+    expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(events.event_name)}]}
+    description: Number of recorded actions; filter by event_name for a specific one.
+    datatype: Integer
+    ai_context:
+      synonyms: [event count, actions]
+  - name: page_views
+    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(sessions.page_views)}]}
+    description: Number of pages viewed.
+    datatype: Integer
+    ai_context:
+      synonyms: [pageviews, views]

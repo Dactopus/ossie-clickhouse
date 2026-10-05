@@ -66,6 +66,12 @@ known object. The other modules are internal.
 
 ## How a question becomes SQL
 
+<a href="https://dactopus.github.io/ossie-clickhouse/"><img src="docs/architecture.svg" width="680" alt="How ossie-clickhouse answers a question: an AI agent asks through the MCP server or the CLI; the Ossie model is cut down to what the connected ClickHouse user may read, as system tables show, and a policy file may hide more; the planner and translator write one SELECT or refuse; the executor runs it in ClickHouse as that user."></a>
+
+Click the diagram for the [interactive version](https://dactopus.github.io/ossie-clickhouse/):
+one question from an agent followed to its SQL, line by line, and two
+questions it refuses.
+
 - Datasets come from `source`, joins from `relationships`. One root
   dataset, `LEFT JOIN` to the dimensions the question touches, only along
   relationships whose `to_columns` cover a primary or unique key of the
