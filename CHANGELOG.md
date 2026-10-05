@@ -7,6 +7,12 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/model-authoring.md`: tables replicated by ClickPipes or PeerDB
+  keep deleted rows under `FINAL`; read them through a view that filters
+  `_peerdb_is_deleted`.
+
 ## [0.2.3] - 2026-10-05
 
 ### Added
