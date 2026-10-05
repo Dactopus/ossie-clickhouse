@@ -16,7 +16,13 @@ from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
 
 from ossie_clickhouse.model import covers_key, join_problem
-from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, untranslatable
+from ossie_clickhouse.translate import (
+    CLICKHOUSE,
+    parse,
+    pick_expression,
+    rewrite_tree,
+    untranslatable,
+)
 
 
 class PlanError(ValueError):
@@ -75,8 +81,8 @@ def _parts(source: str) -> tuple[tuple[str, bool], ...]:
     unquoted text taken as the name it spells, as 0.2.3 did: `t$x`, `t#1`,
     `select`, `x-y`. Whitespace or a parenthesis outside quotes marks a query.
     Refused rather than read as some other table: `--` or `/*` outside quotes
-    (a comment pasted in), `;` or an unclosed quote, and `\\` anywhere, which ClickHouse reads as an
-    escape in quoted names and SQLGlot emits unescaped."""
+    (a comment pasted in), `;` or an unclosed quote, and `\\` anywhere: in a
+    quoted name ClickHouse reads it as an escape, which is not decoded here."""
     s = source.strip()
     bare = _QUOTED.sub("_", s)
     if "\\" in s or re.search(r"--|/\*|;|[`\"]", bare):
@@ -180,7 +186,7 @@ def unanswerable_metrics(model: OssieDocument) -> dict[str, str]:
         homes = _homes(inputs)
         refused = [_repeated(inputs, root, planner._one_to_one(root)) for root in homes]
         if homes and all(refused):
-            aggs = ", ".join(r[0][0].sql("clickhouse") for r in refused)
+            aggs = ", ".join(r[0][0].sql(CLICKHOUSE) for r in refused)
             out[m.name] = (
                 f"aggregates columns of {' and '.join(homes)} separately with functions that "
                 f"count repeated rows ({aggs}); whichever "
@@ -210,7 +216,7 @@ def _check_rows(
             f"{home} joins to"
         )
     if repeated:
-        agg, joined = repeated[0][0].sql("clickhouse"), " and ".join(sorted(repeated[0][1]))
+        agg, joined = repeated[0][0].sql(CLICKHOUSE), " and ".join(sorted(repeated[0][1]))
         raise PlanError(
             f"{label} applies {agg} to {joined} columns alone over {root} rows, "
             f"so each {joined} row would count once per {root} row that references it. "
@@ -313,7 +319,7 @@ class Planner:
             unnamed = [agg for agg, ds in inputs if not ds]
             if unnamed and len(_homes(inputs)) != 1:
                 raise PlanError(
-                    f"metric {m.name!r} uses {unnamed[0].sql('clickhouse')}, which reads no "
+                    f"metric {m.name!r} uses {unnamed[0].sql(CLICKHOUSE)}, which reads no "
                     "column, so it would count rows of whichever dataset a question is "
                     "answered over; count a column of the dataset it means, such as "
                     "COUNT(dataset.key)"
@@ -570,4 +576,4 @@ class Planner:
         return node
 
     def sql(self, q: Query, pretty: bool = False) -> str:
-        return self.plan(q).sql(dialect="clickhouse", pretty=pretty)
+        return self.plan(q).sql(dialect=CLICKHOUSE, pretty=pretty)

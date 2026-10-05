@@ -203,6 +203,26 @@ def test_bare_source_reads_the_url_database(ex, tmp_path, capsys):
     assert "(database ossie_empty); check" in capsys.readouterr().err
 
 
+def test_backslash_in_a_column_name(ex, tmp_path):
+    # ClickHouse reads `\` in a quoted name as an escape: emitted as written,
+    # "a\x41" would read column aA.
+    ex.client.command(r"CREATE TABLE ossie_test.esc (aA Float64, `a\\x41` Float64) ENGINE = Memory")
+    ex.client.command("INSERT INTO ossie_test.esc VALUES (1, 2)")
+    p = tmp_path / "esc.yaml"
+    p.write_text(
+        'version: "0.2.0.dev0"\nname: esc\ndatasets:\n'
+        "  - name: esc\n    source: ossie_test.esc\n    fields:\n"
+        "      - name: v\n"
+        "        expression: {dialects: [{dialect: ANSI_SQL, expression: '\"a\\x41\"'}]}\n"
+        "metrics:\n"
+        "  - name: total\n"
+        "    expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(esc.v)}]}\n"
+    )
+    r = Executor(ex.client, load_model(p)).execute(Query(metrics=("total",)))
+    assert r.rows == [(2.0,)]
+    assert 'SUM(esc."a\\\\x41")' in r.sql
+
+
 def test_query_sources_are_not_introspected(ex, tmp_path):
     p = tmp_path / "query.yaml"
     p.write_text(re.sub(r"source: ossie_test\.\w+", "source: SELECT 1", FIXTURE.read_text()))

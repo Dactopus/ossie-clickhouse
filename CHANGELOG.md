@@ -17,6 +17,9 @@ a minor release may change the Python API.
   `validate --url`. Before, the generated query read another table than
   the one checked in ClickHouse, or broke: ClickHouse reads `\` in a
   quoted name as an escape.
+- A column whose name has a backslash is read as named. Before, the
+  backslash went into the query undoubled, and a field over column
+  `a\x41` read column `aA`.
 
 ### Changed
 

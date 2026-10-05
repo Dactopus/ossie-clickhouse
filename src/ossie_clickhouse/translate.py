@@ -15,6 +15,7 @@ import sqlglot
 import sqlglot.errors
 from ossie import OssieDialect, OssieDocument, OssieExpression
 from sqlglot import exp
+from sqlglot.dialects.clickhouse import ClickHouse
 from sqlglot.dialects.dialect import Dialect
 from sqlglot.parser import Parser
 
@@ -215,6 +216,21 @@ def parse(expression: str) -> exp.Expression:
 # --- ClickHouse rewrites ----------------------------------------------------
 
 
+class _ClickHouse(ClickHouse):
+    class Generator(ClickHouse.Generator):
+        def identifier_sql(self, expression: exp.Identifier) -> str:
+            # ClickHouse reads `\` in a quoted name as an escape ("a\x41" is aA);
+            # SQLGlot emits it as is (30.21), so the SQL would name another object.
+            if "\\" in expression.name:
+                name = expression.name.replace("\\", "\\\\")
+                expression = exp.to_identifier(name, quoted=True)
+            return super().identifier_sql(expression)
+
+
+# Generate ClickHouse SQL with this, never with dialect="clickhouse".
+CLICKHOUSE = _ClickHouse()
+
+
 def _f(name: str, *args: exp.Expression | None) -> exp.Anonymous:
     return exp.Anonymous(this=name, expressions=[a for a in args if a is not None])
 
@@ -387,7 +403,7 @@ def rewrite_tree(tree: exp.Expression) -> exp.Expression:
 def to_clickhouse(expression: str | exp.Expression) -> str:
     """ClickHouse SQL for an Ossie expression."""
     tree = parse(expression) if isinstance(expression, str) else expression
-    return rewrite_tree(tree).sql(dialect="clickhouse")
+    return rewrite_tree(tree).sql(dialect=CLICKHOUSE)
 
 
 def translate(expression: OssieExpression) -> str:
