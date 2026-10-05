@@ -1,5 +1,14 @@
 # ossie-clickhouse
 
+[![CI](https://github.com/Dactopus/ossie-clickhouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dactopus/ossie-clickhouse/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Dactopus/ossie-clickhouse)](https://github.com/Dactopus/ossie-clickhouse/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/Dactopus/ossie-clickhouse)](https://github.com/Dactopus/ossie-clickhouse/releases)
+[![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FDactopus%2Fossie-clickhouse%2Fmain%2Fpyproject.toml)](https://github.com/Dactopus/ossie-clickhouse/blob/main/pyproject.toml)
+<!-- On PyPI this README becomes the package page: swap the Release badge for
+     https://img.shields.io/pypi/v/ossie-clickhouse linked to the PyPI page, and
+     make relative links and images absolute, as the badges' are; PyPI does not
+     resolve them. -->
+
 An implementation of the [Apache Ossie](https://github.com/apache/ossie)
 semantic model standard for [ClickHouse](https://clickhouse.com/docs). It reads an Ossie description of
 your data, answers questions asked in business terms (metrics, dimensions,
