@@ -12,8 +12,10 @@ a minor release may change the Python API.
 - A diagram of how a question becomes SQL in the README, linked to an
   interactive page (`docs/index.html`, GitHub Pages) that follows one
   question on the `web_analytics` model of dactopus-data-models.
-  `tests/test_docs.py` checks that the SQL and refusals it quotes are
-  what the planner writes.
+  `tests/test_docs.py` checks that the SQL, the lines each step marks and
+  the refusals it quotes are what the planner writes for a ClickHouse user
+  who can or cannot read a column; the README diagram follows GitHub's
+  theme, not the system's.
 
 ## [0.2.2] - 2026-10-04
 

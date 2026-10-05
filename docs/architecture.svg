@@ -2,20 +2,28 @@
 <title id="d-title">How ossie-clickhouse answers a question</title>
 <desc id="d-desc">An AI agent asks through the MCP server or the CLI. ossie-clickhouse cuts the Ossie model down to what the connected ClickHouse user may read, as system tables show, and hides more if a policy file says so. The planner and translator write one SELECT or refuse the question, and the executor runs it in ClickHouse as that user.</desc>
 <style>
+/* Light or dark as the viewer's system says; #light or #dark after the file name forces one (the README picks by GitHub theme). */
+#light:target { color-scheme: light; }
+#dark:target { color-scheme: dark; }
 svg.dm {
-  --d-bg: #ffffff; --d-muted: #5f5e5a; --d-arrow: #888780; --d-accent: #534ab7;
-  --g-fill: #f1efe8; --g-stroke: #5f5e5a; --g-title: #444441; --g-sub: #5f5e5a;
-  --p-fill: #eeedfe; --p-stroke: #534ab7; --p-title: #3c3489; --p-sub: #534ab7;
-  --t-fill: #e1f5ee; --t-stroke: #0f6e56; --t-title: #085041; --t-sub: #0f6e56;
+  color-scheme: light dark;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  svg.dm {
-    --d-bg: #1f1e1d; --d-muted: #b4b2a9; --d-arrow: #888780; --d-accent: #afa9ec;
-    --g-fill: #444441; --g-stroke: #b4b2a9; --g-title: #f1efe8; --g-sub: #d3d1c7;
-    --p-fill: #3c3489; --p-stroke: #afa9ec; --p-title: #eeedfe; --p-sub: #cecbf6;
-    --t-fill: #04342c; --t-stroke: #5dcaa5; --t-title: #e1f5ee; --t-sub: #9fe1cb;
-  }
+  --d-bg: light-dark(#ffffff, #1f1e1d);
+  --d-muted: light-dark(#5f5e5a, #b4b2a9);
+  --d-arrow: light-dark(#888780, #888780);
+  --d-accent: light-dark(#534ab7, #afa9ec);
+  --g-fill: light-dark(#f1efe8, #444441);
+  --g-stroke: light-dark(#5f5e5a, #b4b2a9);
+  --g-title: light-dark(#444441, #f1efe8);
+  --g-sub: light-dark(#5f5e5a, #d3d1c7);
+  --p-fill: light-dark(#eeedfe, #3c3489);
+  --p-stroke: light-dark(#534ab7, #afa9ec);
+  --p-title: light-dark(#3c3489, #eeedfe);
+  --p-sub: light-dark(#534ab7, #cecbf6);
+  --t-fill: light-dark(#e1f5ee, #04342c);
+  --t-stroke: light-dark(#0f6e56, #5dcaa5);
+  --t-title: light-dark(#085041, #e1f5ee);
+  --t-sub: light-dark(#0f6e56, #9fe1cb);
 }
 svg.dm .bg { fill: var(--d-bg); }
 svg.dm .th { font-size: 14px; font-weight: 600; }
@@ -36,6 +44,7 @@ svg.dm .cta rect { fill: none; stroke: var(--d-accent); }
 svg.dm .cta text { fill: var(--d-accent); font-size: 13px; font-weight: 600; }
 </style>
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<g id="light"><g id="dark">
 <rect class="bg" x="0" y="0" width="680" height="530" rx="12"/>
 
 <g class="purple frame">
@@ -119,4 +128,5 @@ svg.dm .cta text { fill: var(--d-accent); font-size: 13px; font-weight: 600; }
 <rect x="205" y="478" width="270" height="36" rx="8" stroke-width="1"/>
 <text x="340" y="496" text-anchor="middle" dominant-baseline="central">Open the interactive version ↗</text>
 </g>
+</g></g>
 </svg>
