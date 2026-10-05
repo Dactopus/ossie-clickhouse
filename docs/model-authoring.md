@@ -157,6 +157,21 @@ versions), turn it off per dataset:
 `vendor_name: CLICKHOUSE` is the namespace this project owns; `data` is
 JSON. `dedup` is the only key today.
 
+`FINAL` drops deleted rows only when the engine declares its delete
+column, as in `ReplacingMergeTree(version, is_deleted)`. CDC tools that
+write the flag as a plain column leave deleted rows in place:
+[ClickPipes and PeerDB](https://clickhouse.com/docs/integrations/clickpipes/postgres/deduplication)
+create `ReplacingMergeTree(_peerdb_version)` and mark deletes in
+`_peerdb_is_deleted`, so a metric over such a table counts deleted rows.
+Point the dataset at a view that filters them out:
+
+```sql
+CREATE VIEW shop.orders_current AS
+SELECT * FROM shop.orders FINAL WHERE _peerdb_is_deleted = 0
+```
+
+A view is not a `Replacing*` table, so it is read as is.
+
 ## Dictionaries
 
 A dataset whose source is a ClickHouse [dictionary](https://clickhouse.com/docs/sql-reference/dictionaries)
