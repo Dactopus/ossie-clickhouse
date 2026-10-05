@@ -18,6 +18,7 @@ DROP DICTIONARY IF EXISTS ossie_test.country;
 DROP DICTIONARY IF EXISTS ossie_test.`country names`;
 DROP DICTIONARY IF EXISTS ossie_test.`country.v2`;
 DROP TABLE IF EXISTS ossie_test.orders;
+DROP TABLE IF EXISTS ossie_test.esc;
 DROP TABLE IF EXISTS ossie_test.country_src;
 CREATE TABLE ossie_test.orders (order_id UInt32, amount Float64, country_code String, ver UInt32)
   ENGINE = ReplacingMergeTree(ver) ORDER BY order_id;
