@@ -130,7 +130,7 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   between dots is the name as written (`t$x`, `t#1`). `_parts` splits it
   with regexes, not SQLGlot's tokenizer. Refused: `--`, `/*`, `;` or a
   stray quote outside quotes, and `\` anywhere: ClickHouse reads it as
-  an escape in quoted names and SQLGlot emits it unescaped.
+  an escape in quoted names, and `_parts` does not decode escapes.
 - `dictGet*` takes the dictionary's name unquoted and splits it on dots,
   in string and identifier form alike: a dictionary whose name or
   database has a dot is joined as a table.
@@ -151,6 +151,9 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   `quantileExact`, which picks one element too high whenever `p * n` is
   whole (Postgres semantics: the first value whose cumulative share
   reaches `p`).
+- ClickHouse reads `\` in a quoted name as an escape, and SQLGlot's
+  ClickHouse generator does not double it (30.21). Generate SQL with
+  `translate.CLICKHOUSE`, which does, never with `dialect="clickhouse"`.
 - Function rewrites live in `translate.py` and work on the SQLGlot AST,
   never on SQL text.
 - SQLGlot adds no parentheses for precedence, and its Python operators
