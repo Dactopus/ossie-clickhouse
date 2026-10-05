@@ -17,6 +17,21 @@ a minor release may change the Python API.
   who can or cannot read a column; the README diagram follows GitHub's
   theme, not the system's.
 
+### Fixed
+
+- A compound expression placed under an operator keeps its precedence.
+  SQLGlot prints no parentheses of its own, so a metric named in a filter
+  (`1000 / customer_lifetime_value > 1`), a computed field inside
+  arithmetic (`orders.net * 2`, `net` being `amount - 5`), `CONTAINS`
+  under another operator and a percentile whose fraction is an expression
+  (`PERCENTILE_CONT(0.5 - 0.2) ... DESC` took the 0.3 quantile, not 0.7)
+  were read with the operators regrouped and returned wrong values
+  without an error. Every operator under another operator is now
+  parenthesized, except the left operand of the same operator
+  (`a - b - c`, `a AND b AND c`), also where precedence alone would do:
+  generated SQL prints new parentheses (`(x * 2) > 25`,
+  `(a > 1) AND (b < 2)`), with the same values.
+
 ## [0.2.2] - 2026-10-04
 
 ### Fixed

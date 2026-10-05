@@ -227,7 +227,7 @@ def test_aggregate_filters_go_to_having():
             filters=("total_sales > 1 AND customer.customer_full_name <> ''",),
         )
     )
-    assert "HAVING SUM(store_sales.ss_ext_sales_price) > 1 AND customer.c_first_name" in sql
+    assert "HAVING (SUM(store_sales.ss_ext_sales_price) > 1) AND ((customer.c_first_name" in sql
 
 
 def test_filter_on_unselected_metric_adds_its_join():
@@ -243,8 +243,8 @@ def test_filter_on_unselected_metric_adds_its_join():
         "ON store_sales.ss_customer_sk = customer.c_customer_sk" in sql
     )
     assert sql.endswith(
-        "GROUP BY item.i_brand HAVING SUM(store_sales.ss_ext_sales_price) / "
-        "COUNT(DISTINCT customer.c_customer_sk) > 1 ORDER BY total_sales DESC "
+        "GROUP BY item.i_brand HAVING (SUM(store_sales.ss_ext_sales_price) / "
+        "COUNT(DISTINCT customer.c_customer_sk)) > 1 ORDER BY total_sales DESC "
         "SETTINGS join_use_nulls = 1"
     )
 

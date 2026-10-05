@@ -81,6 +81,32 @@ def test_dictionary_joined_on_superset_of_its_key(ex, tmp_path):
     assert r.rows == [(None, 65.0)]
 
 
+def test_inlined_expressions_keep_their_precedence(ex, tmp_path):
+    # A field or metric named inside an operator is inlined as one operand.
+    p = tmp_path / "inline.yaml"
+    text = FIXTURE.read_text().replace(
+        "      - name: country_code\n",
+        "      - name: net\n"
+        "        expression: {dialects: [{dialect: ANSI_SQL, expression: amount - 5}]}\n"
+        "      - name: country_code\n",
+        1,
+    )
+    text += (
+        "  - name: avg_order\n"
+        "    expression: {dialects: [{dialect: ANSI_SQL, "
+        "expression: SUM(orders.amount) / COUNT(orders.order_id)}]}\n"
+    )
+    p.write_text(text)
+    e = Executor(ex.client, load_model(p))
+    # Amounts 15, 20, 30: (amount - 5) * 2 > 25 keeps 20 and 30, not amount - 5 * 2.
+    assert e.execute(Query(metrics=("revenue",), filters=("orders.net * 2 > 25",))).rows == [
+        (50.0,)
+    ]
+    # 100 / (65 / 3) is 4.6, not 100 / 65 / 3.
+    r = e.execute(Query(metrics=("revenue",), filters=("100 / avg_order > 4",)))
+    assert r.rows == [(65.0,)]
+
+
 def test_nan_and_inf_become_none(ex):
     r = ex.execute(Query(metrics=("spread",), dimensions=("orders.order_id",), limit=1))
     assert r.rows[0][1] is None
