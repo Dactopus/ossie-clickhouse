@@ -7,6 +7,14 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Added
+
+- A diagram of how a question becomes SQL in the README, linked to an
+  interactive page (`docs/index.html`, GitHub Pages) that follows one
+  question on the `web_analytics` model of dactopus-data-models.
+  `tests/test_docs.py` checks that the SQL and refusals it quotes are
+  what the planner writes.
+
 ## [0.2.2] - 2026-10-04
 
 ### Fixed

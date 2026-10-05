@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dm" viewBox="0 0 680 530" width="680" height="530" role="img" aria-labelledby="d-title d-desc">
+<title id="d-title">How ossie-clickhouse answers a question</title>
+<desc id="d-desc">An AI agent asks through the MCP server or the CLI. ossie-clickhouse cuts the Ossie model down to what the connected ClickHouse user may read, as system tables show, and hides more if a policy file says so. The planner and translator write one SELECT or refuse the question, and the executor runs it in ClickHouse as that user.</desc>
+<style>
+svg.dm {
+  --d-bg: #ffffff; --d-muted: #5f5e5a; --d-arrow: #888780; --d-accent: #534ab7;
+  --g-fill: #f1efe8; --g-stroke: #5f5e5a; --g-title: #444441; --g-sub: #5f5e5a;
+  --p-fill: #eeedfe; --p-stroke: #534ab7; --p-title: #3c3489; --p-sub: #534ab7;
+  --t-fill: #e1f5ee; --t-stroke: #0f6e56; --t-title: #085041; --t-sub: #0f6e56;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  svg.dm {
+    --d-bg: #1f1e1d; --d-muted: #b4b2a9; --d-arrow: #888780; --d-accent: #afa9ec;
+    --g-fill: #444441; --g-stroke: #b4b2a9; --g-title: #f1efe8; --g-sub: #d3d1c7;
+    --p-fill: #3c3489; --p-stroke: #afa9ec; --p-title: #eeedfe; --p-sub: #cecbf6;
+    --t-fill: #04342c; --t-stroke: #5dcaa5; --t-title: #e1f5ee; --t-sub: #9fe1cb;
+  }
+}
+svg.dm .bg { fill: var(--d-bg); }
+svg.dm .th { font-size: 14px; font-weight: 600; }
+svg.dm .ts { font-size: 12px; }
+svg.dm .arr { stroke: var(--d-arrow); stroke-width: 1.5; fill: none; }
+svg.dm .gray rect { fill: var(--g-fill); stroke: var(--g-stroke); }
+svg.dm .gray .th { fill: var(--g-title); }
+svg.dm .gray .ts { fill: var(--g-sub); }
+svg.dm .purple rect { fill: var(--p-fill); stroke: var(--p-stroke); }
+svg.dm .purple .th { fill: var(--p-title); }
+svg.dm .purple .ts { fill: var(--p-sub); }
+svg.dm .teal rect { fill: var(--t-fill); stroke: var(--t-stroke); }
+svg.dm .teal .th { fill: var(--t-title); }
+svg.dm .teal .ts { fill: var(--t-sub); }
+svg.dm .frame rect { fill-opacity: .4; }
+svg.dm .legend { fill: var(--d-muted); }
+svg.dm .cta rect { fill: none; stroke: var(--d-accent); }
+svg.dm .cta text { fill: var(--d-accent); font-size: 13px; font-weight: 600; }
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect class="bg" x="0" y="0" width="680" height="530" rx="12"/>
+
+<g class="purple frame">
+<rect x="210" y="20" width="240" height="406" rx="20" stroke-width="0.5"/>
+<text class="th" x="330" y="46" text-anchor="middle" dominant-baseline="central">ossie-clickhouse</text>
+</g>
+<g class="teal frame">
+<rect x="470" y="20" width="190" height="406" rx="20" stroke-width="0.5"/>
+<text class="th" x="565" y="46" text-anchor="middle" dominant-baseline="central">Your ClickHouse</text>
+<text class="ts" x="565" y="66" text-anchor="middle" dominant-baseline="central">user and database</text>
+<text class="ts" x="565" y="84" text-anchor="middle" dominant-baseline="central">from the URL</text>
+</g>
+
+<g class="node gray" data-k="agent">
+<rect x="20" y="76" width="170" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="105" y="96" text-anchor="middle" dominant-baseline="central">AI agent</text>
+<text class="ts" x="105" y="116" text-anchor="middle" dominant-baseline="central">asks by name, gets rows</text>
+</g>
+<g class="node gray" data-k="model">
+<rect x="20" y="166" width="170" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="105" y="186" text-anchor="middle" dominant-baseline="central">Ossie model</text>
+<text class="ts" x="105" y="206" text-anchor="middle" dominant-baseline="central">your YAML file</text>
+</g>
+<g class="node gray" data-k="policy">
+<rect x="20" y="256" width="170" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="105" y="276" text-anchor="middle" dominant-baseline="central">Policy file</text>
+<text class="ts" x="105" y="296" text-anchor="middle" dominant-baseline="central">optional, hides more</text>
+</g>
+
+<g class="node purple" data-k="mcp">
+<rect x="225" y="76" width="210" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="330" y="96" text-anchor="middle" dominant-baseline="central">MCP server, CLI</text>
+<text class="ts" x="330" y="116" text-anchor="middle" dominant-baseline="central">list, describe, query</text>
+</g>
+<g class="node purple" data-k="trim">
+<rect x="225" y="166" width="210" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="330" y="186" text-anchor="middle" dominant-baseline="central">Access trim</text>
+<text class="ts" x="330" y="206" text-anchor="middle" dominant-baseline="central">the model as the user sees it</text>
+</g>
+<g class="node purple" data-k="plan">
+<rect x="225" y="256" width="210" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="330" y="276" text-anchor="middle" dominant-baseline="central">Planner, translator</text>
+<text class="ts" x="330" y="296" text-anchor="middle" dominant-baseline="central">one SELECT or a refusal</text>
+</g>
+<g class="node purple" data-k="exec">
+<rect x="225" y="346" width="210" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="330" y="366" text-anchor="middle" dominant-baseline="central">Executor</text>
+<text class="ts" x="330" y="386" text-anchor="middle" dominant-baseline="central">runs it as the user</text>
+</g>
+
+<g class="node teal" data-k="sys">
+<rect x="485" y="166" width="160" height="150" rx="8" stroke-width="0.5"/>
+<text class="th" x="565" y="221" text-anchor="middle" dominant-baseline="central">System tables</text>
+<text class="ts" x="565" y="243" text-anchor="middle" dominant-baseline="central">what the user may read,</text>
+<text class="ts" x="565" y="261" text-anchor="middle" dominant-baseline="central">engines, dictionaries</text>
+</g>
+<g class="node teal" data-k="tables">
+<rect x="485" y="346" width="160" height="60" rx="8" stroke-width="0.5"/>
+<text class="th" x="565" y="366" text-anchor="middle" dominant-baseline="central">Your tables</text>
+<text class="ts" x="565" y="386" text-anchor="middle" dominant-baseline="central">grants, row policies</text>
+</g>
+
+<line x1="193" y1="106" x2="222" y2="106" class="arr" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line x1="190" y1="196" x2="222" y2="196" class="arr" marker-end="url(#arrow)"/>
+<path d="M190 286 L204 286 L204 212 L222 212" class="arr" marker-end="url(#arrow)"/>
+<line x1="330" y1="136" x2="330" y2="163" class="arr" marker-end="url(#arrow)"/>
+<line x1="330" y1="226" x2="330" y2="253" class="arr" marker-end="url(#arrow)"/>
+<line x1="330" y1="316" x2="330" y2="343" class="arr" marker-end="url(#arrow)"/>
+<line x1="485" y1="196" x2="438" y2="196" class="arr" marker-end="url(#arrow)"/>
+<line x1="485" y1="286" x2="438" y2="286" class="arr" marker-end="url(#arrow)"/>
+<line x1="435" y1="376" x2="482" y2="376" class="arr" marker-end="url(#arrow)"/>
+
+<g class="purple"><rect x="20" y="450" width="12" height="12" rx="2" stroke-width="0.5"/></g>
+<text class="ts legend" x="40" y="456" dominant-baseline="central">this project</text>
+<g class="teal"><rect x="230" y="450" width="12" height="12" rx="2" stroke-width="0.5"/></g>
+<text class="ts legend" x="250" y="456" dominant-baseline="central">your ClickHouse</text>
+<g class="gray"><rect x="470" y="450" width="12" height="12" rx="2" stroke-width="0.5"/></g>
+<text class="ts legend" x="490" y="456" dominant-baseline="central">outside this project</text>
+
+<g class="cta" aria-hidden="true">
+<rect x="205" y="478" width="270" height="36" rx="8" stroke-width="1"/>
+<text x="340" y="496" text-anchor="middle" dominant-baseline="central">Open the interactive version ↗</text>
+</g>
+</svg>
