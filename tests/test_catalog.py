@@ -49,6 +49,10 @@ AGGREGATES = [
     ("PERCENTILE_DISC(1) WITHIN GROUP (ORDER BY x)", DUCK),
     ("PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x DESC)", DUCK),
     ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x DESC)", DUCK),
+    ("PERCENTILE_CONT(0.2 + 0.3) WITHIN GROUP (ORDER BY x DESC)", DUCK),
+    ("PERCENTILE_DISC(0.5 + 0.25) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_CONT(0.5 - 0.2) WITHIN GROUP (ORDER BY x DESC)", DUCK),
+    ("PERCENTILE_DISC(0.9 - 0.4) WITHIN GROUP (ORDER BY x DESC)", DUCK),
     ("APPROX_COUNT_DISTINCT(x)", DUCK),
     ("APPROX_PERCENTILE(x, 0.5)", 2.5),  # DuckDB lacks it; quantileTDigest is approximate by design
     ("SUM(DISTINCT x)", DUCK),
@@ -87,8 +91,10 @@ CATALOG = [
     ("SUBSTRING(s, 1, 2)", DUCK), ("REPLACE(s, 'a', 'b')", DUCK), ("SPLIT_PART(s, '-', 1)", DUCK),
     ("SPLIT_PART(s, '-', 5)", ""),  # out of range: empty string, as in Snowflake/Postgres
     ("POSITION('c' IN s)", DUCK), ("CHARINDEX('c', s)", 3), ("CONTAINS(s, 'c')", DUCK),
+    ("CONTAINS(s, 'a') = CONTAINS(s, 'c')", DUCK),
     ("STARTSWITH(s, 'ab')", 1), ("ENDSWITH(s, 'ab')", 0),
     ("s LIKE 'a%'", DUCK), ("s ILIKE 'A%'", DUCK), ("REGEXP_LIKE(s, 'a.*')", 1),
+    ("(s LIKE 'a!%' ESCAPE '!') = 0", DUCK),
     ("REGEXP_EXTRACT(s, 'b.')", DUCK), ("REGEXP_COUNT(s, '[a-c]')", 3),
     # Spec: "replace matches", plural, so all occurrences (Snowflake, BigQuery); DuckDB replaces the first only.
     ("REGEXP_REPLACE(s, '[ab]', 'x')", "xxc-def"),

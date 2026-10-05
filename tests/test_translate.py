@@ -39,6 +39,14 @@ def test_translate_uses_picked_dialect():
             "if(COUNT(x) = 0, NULL, arrayElement(arrayReverseSort(groupArray(x)), "
             "toUInt64(GREATEST(CEIL(0.9 * COUNT(x)), 1))))",
         ),
+        (
+            "PERCENTILE_CONT(0.2 + 0.3) WITHIN GROUP (ORDER BY x DESC)",
+            "quantile(1 - (0.2 + 0.3))(x)",
+        ),
+        (
+            "PERCENTILE_CONT(0.5 - 0.2) WITHIN GROUP (ORDER BY x DESC)",
+            "quantile(1 - (0.5 - 0.2))(x)",
+        ),
         ("APPROX_PERCENTILE(x, 0.5)", "quantileTDigest(0.5)(x)"),
         ("APPROX_COUNT_DISTINCT(x)", "uniq(x)"),
         # windows: NULL for a missing row, NULLs respected (ANSI)
@@ -65,6 +73,13 @@ def test_translate_uses_picked_dialect():
         # strings
         ("SPLIT_PART(s, '-', 2)", "arrayElement(splitByString('-', s), 2)"),
         ("CONTAINS(s, 'a')", "position(s, 'a') > 0"),
+        # a rewrite that yields an operator keeps it one operand
+        ("CONTAINS(s, 'a') + 1", "(position(s, 'a') > 0) + 1"),
+        ("NOT CONTAINS(s, 'a')", "NOT (position(s, 'a') > 0)"),
+        # every operator under another is one operand, except the left one of its kind
+        ("a OR b AND c", "a OR (b AND c)"),
+        ("a - b - c + d", "(a - b - c) + d"),
+        ("x LIKE 'a!%' ESCAPE '!' AND y", "(x LIKE 'a!%' ESCAPE '!') AND y"),
         ("REGEXP_COUNT(s, 'a')", "countMatches(s, 'a')"),
         # conditionals
         ("IFF(x > 1, 1, 0)", "if(x > 1, 1, 0)"),

@@ -338,8 +338,26 @@ def rewrite(node: exp.Expression) -> exp.Expression:
     return node
 
 
+# Nodes SQLGlot prints between or before their operands. AND, OR and COLLATE are also
+# functions to SQLGlot; other functions print as calls.
+_OPERATOR = exp.Binary | exp.Unary | exp.Predicate
+
+
+def _operator(node: exp.Expression | None) -> bool:
+    if isinstance(node, exp.Connector | exp.Collate):
+        return True
+    return isinstance(node, _OPERATOR) and not isinstance(node, exp.Func | exp.Paren)
+
+
 def rewrite_tree(tree: exp.Expression) -> exp.Expression:
-    """A copy of ``tree`` with every node rewritten for ClickHouse."""
+    """A copy of ``tree`` with every node rewritten for ClickHouse.
+
+    SQLGlot prints a tree as it stands, without parentheses for precedence, so an
+    operator a rewrite builds or an inlined field or metric brings under another
+    operator would be regrouped: ``CONTAINS(a, 'x') + 1`` must not print as
+    ``position(a, 'x') > 0 + 1``. Every operator under another operator ends up in
+    parentheses, except the left operand of the same operator (``a - b - c``), which
+    reads the same without them."""
     tree = tree.copy()
     # Bottom-up, so a rewrite that replaces a node still sees its arguments rewritten;
     # Expression.transform does not descend into a replaced node.
@@ -352,6 +370,17 @@ def rewrite_tree(tree: exp.Expression) -> exp.Expression:
             tree = new
         else:
             parent.set(arg_key, new, index)
+    for node in list(tree.walk()):
+        parent, arg_key, index = node.parent, node.arg_key, node.index
+        # A list element (IN (a + 1, 2)) is set off by commas already. ESCAPE and the
+        # dot bind tighter than any operator: `(x LIKE 'a!%') ESCAPE '!'` does not parse.
+        if index is not None or isinstance(parent, exp.Escape | exp.Dot):
+            continue
+        if not (_operator(node) and _operator(parent)):
+            continue
+        if arg_key == "this" and type(node) is type(parent) and isinstance(node, exp.Binary):
+            continue
+        parent.set(arg_key, exp.paren(node, copy=False), index)
     return tree
 
 
