@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-05
+
 ### Fixed
 
 - A dataset `source` with quoted parts (`` `shop`.`orders` ``,
