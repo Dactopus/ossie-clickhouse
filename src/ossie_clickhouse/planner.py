@@ -8,15 +8,12 @@ names the nearest supported thing.
 from __future__ import annotations
 
 import difflib
+import re
 from dataclasses import dataclass, field, replace
 from functools import cache
-from itertools import pairwise
 
 from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
-from sqlglot.dialects.clickhouse import ClickHouse
-from sqlglot.errors import SqlglotError
-from sqlglot.tokens import Token, TokenType
 
 from ossie_clickhouse.model import covers_key, join_problem
 from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, untranslatable
@@ -26,7 +23,11 @@ class PlanError(ValueError):
     pass
 
 
-_CLICKHOUSE = ClickHouse()
+_QUOTED = re.compile(r"`(?:[^`]|``)*`|\"(?:[^\"]|\"\")*\"")
+# A non-empty quoted identifier, or unquoted text without a quote, space, `;`,
+# parenthesis or dot.
+_PART = re.compile(r"`(?:[^`]|``)+`|\"(?:[^\"]|\"\")+\"|[^\s`\"'();.]+")
+_SOURCE = re.compile(rf"(?:{_PART.pattern})(?:\.(?:{_PART.pattern})){{0,2}}")
 
 
 @dataclass(frozen=True)
@@ -70,36 +71,24 @@ def source_table(source: str) -> exp.Table:
 def _parts(source: str) -> tuple[tuple[str, bool], ...]:
     """Each dot-separated part of a source as (name, quoted).
 
-    A part is one quoted identifier, or unquoted text SQLGlot need not accept as
-    a name (`select`, `x-y`). The tokens must cover the source end to end, so a
-    space, a comment or a `;` refuses it rather than being dropped."""
+    A part is one quoted identifier (a doubled quote stands for itself) or
+    unquoted text taken as the name it spells, as 0.2.3 did: `t$x`, `t#1`,
+    `select`, `x-y`. Whitespace or a parenthesis outside quotes marks a query.
+    Refused rather than read as some other table: `--` or `/*` outside quotes
+    (a comment pasted in), `;` or an unclosed quote, and `\\` anywhere, which ClickHouse reads as an
+    escape in quoted names and SQLGlot emits unescaped."""
     s = source.strip()
-    try:
-        tokens = _CLICKHOUSE.tokenize(s)
-    except SqlglotError:
-        tokens = []
-    if any(t.token_type == TokenType.L_PAREN for t in tokens) or any(
-        a.end + 1 != b.start for a, b in pairwise(tokens)
-    ):
-        raise PlanError(f"query sources are not supported yet: {source!r}")
-    groups: list[list[Token]] = [[]]
-    for t in tokens:
-        if t.token_type == TokenType.DOT:
-            groups.append([])
-        else:
-            groups[-1].append(t)
-    parts = []
-    for g in groups:
-        text = s[g[0].start : g[-1].end + 1] if g else ""
-        if len(g) == 1 and g[0].token_type == TokenType.IDENTIFIER and g[0].text:
-            parts.append((g[0].text, True))
-        elif text and not set(text) & set("`\"';()"):
-            parts.append((text, False))
-        else:
-            raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
-    if len(parts) > 3 or tokens[0].start != 0 or tokens[-1].end != len(s) - 1:
+    bare = _QUOTED.sub("_", s)
+    if "\\" in s or re.search(r"--|/\*|;|[`\"]", bare):
         raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
-    return tuple(parts)
+    if re.search(r"[\s()]", bare):
+        raise PlanError(f"query sources are not supported yet: {source!r}")
+    if not _SOURCE.fullmatch(s):
+        raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
+    return tuple(
+        (p[1:-1].replace(p[0] * 2, p[0]), True) if p[0] in '`"' else (p, False)
+        for p in _PART.findall(s)
+    )
 
 
 def source_name(source: str) -> str:

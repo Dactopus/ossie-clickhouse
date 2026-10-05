@@ -126,8 +126,11 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 - Table names are `database.table`; Ossie `source` may have three parts,
   or one: a bare table reads `currentDatabase()` (the URL's database, else
   the user's default), and introspection asks the server for it. Parts
-  may be quoted (`` ` `` or `"`); `source_table` reads them with SQLGlot's
-  tokenizer, which must cover the source end to end (no comments, `;`).
+  may be quoted (`` ` `` or `"`, a doubled quote inside); unquoted text
+  between dots is the name as written (`t$x`, `t#1`). `_parts` splits it
+  with regexes, not SQLGlot's tokenizer. Refused: `--`, `/*`, `;` or a
+  stray quote outside quotes, and `\` anywhere: ClickHouse reads it as
+  an escape in quoted names and SQLGlot emits it unescaped.
 - `dictGet*` takes the dictionary's name unquoted and splits it on dots,
   in string and identifier form alike: a dictionary whose name or
   database has a dot is joined as a table.

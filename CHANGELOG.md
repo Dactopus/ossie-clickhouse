@@ -13,6 +13,16 @@ a minor release may change the Python API.
   `"Sales DB".orders`), as dbt-clickhouse writes it, is read as the table
   it names. Before, the quotes stayed in the name, the table was not
   found, and the dataset disappeared from the model (#26).
+- A dataset `source` with a backslash is refused and reported by
+  `validate --url`. Before, the generated query read another table than
+  the one checked in ClickHouse, or broke: ClickHouse reads `\` in a
+  quoted name as an escape.
+
+### Changed
+
+- `--` and `/*` outside quotes in a dataset `source`, likely a pasted
+  comment, refuse it; 0.2.3 read them as part of the table name. Quote
+  the part if the table is really named so.
 
 ### Added
 

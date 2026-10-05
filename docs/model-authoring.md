@@ -20,7 +20,10 @@ so one model serves a database per customer, or dev and prod side by side.
 A name with a dot, a space or another special character is quoted with
 backticks or double quotes, as in SQL: `` `my.db`.`orders` `` or
 `"Sales DB".orders`. dbt-clickhouse writes every source quoted, and that
-works as is.
+works as is. Unquoted text between dots is taken as the name it spells,
+so a table replicated from Postgres as `orders$v2` needs no quotes. A
+backslash is not accepted in a source, quoted or not, nor `--`, `/*` or
+`;` outside quotes; `validate --url` names such a source.
 
 A three-part `database.schema.table` is accepted and the middle part
 dropped, since ClickHouse has no schema level; this is what lets a model
