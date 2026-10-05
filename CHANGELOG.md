@@ -7,6 +7,13 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Fixed
+
+- A dataset `source` with quoted parts (`` `shop`.`orders` ``,
+  `"Sales DB".orders`), as dbt-clickhouse writes it, is read as the table
+  it names. Before, the quotes stayed in the name, the table was not
+  found, and the dataset disappeared from the model (#26).
+
 ### Added
 
 - `docs/model-authoring.md`: tables replicated by ClickPipes or PeerDB

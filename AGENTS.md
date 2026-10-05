@@ -125,7 +125,12 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   and `toDayOfYear`.
 - Table names are `database.table`; Ossie `source` may have three parts,
   or one: a bare table reads `currentDatabase()` (the URL's database, else
-  the user's default), and introspection asks the server for it.
+  the user's default), and introspection asks the server for it. Parts
+  may be quoted (`` ` `` or `"`); `source_table` reads them with SQLGlot's
+  tokenizer, which must cover the source end to end (no comments, `;`).
+- `dictGet*` takes the dictionary's name unquoted and splits it on dots,
+  in string and identifier form alike: a dictionary whose name or
+  database has a dot is joined as a table.
 - `REGEXP_REPLACE` replaces all matches (spec reading); `DAYOFWEEK` is ISO.
 - NULLs sort last in both directions, ClickHouse's default (the spec is
   silent): `NULL_ORDERING` on the parser dialect, `nulls_first=False` in

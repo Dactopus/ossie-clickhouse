@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import difflib
 from dataclasses import dataclass, field, replace
+from functools import cache
+from itertools import pairwise
 
 from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
+from sqlglot.dialects.clickhouse import ClickHouse
+from sqlglot.errors import SqlglotError
+from sqlglot.tokens import Token, TokenType
 
 from ossie_clickhouse.model import covers_key, join_problem
 from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, untranslatable
@@ -19,6 +24,9 @@ from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, unt
 
 class PlanError(ValueError):
     pass
+
+
+_CLICKHOUSE = ClickHouse()
 
 
 @dataclass(frozen=True)
@@ -49,14 +57,55 @@ class Query:
 
 
 def source_table(source: str) -> exp.Table:
-    """Ossie source (`db.schema.table`, `db.table`, `table`) to a ClickHouse table."""
-    if any(ch.isspace() for ch in source.strip()) or "(" in source:
-        raise PlanError(f"query sources are not supported yet: {source!r}")
-    parts = source.split(".")
-    if len(parts) > 3:
-        raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
+    """Ossie source (`db.schema.table`, `db.table`, `table`) to a ClickHouse table.
+
+    Parts may be quoted with backticks or double quotes; `.db` and `.name` of
+    the result are unquoted, and the emitted SQL keeps the quotes."""
+    parts = [exp.to_identifier(name, quoted=quoted or None) for name, quoted in _parts(source)]
     # ClickHouse has no schema level: keep database and table, drop the middle.
     return exp.table_(parts[-1], db=parts[0] if len(parts) > 1 else None)
+
+
+@cache
+def _parts(source: str) -> tuple[tuple[str, bool], ...]:
+    """Each dot-separated part of a source as (name, quoted).
+
+    A part is one quoted identifier, or unquoted text SQLGlot need not accept as
+    a name (`select`, `x-y`). The tokens must cover the source end to end, so a
+    space, a comment or a `;` refuses it rather than being dropped."""
+    s = source.strip()
+    try:
+        tokens = _CLICKHOUSE.tokenize(s)
+    except SqlglotError:
+        tokens = []
+    if any(t.token_type == TokenType.L_PAREN for t in tokens) or any(
+        a.end + 1 != b.start for a, b in pairwise(tokens)
+    ):
+        raise PlanError(f"query sources are not supported yet: {source!r}")
+    groups: list[list[Token]] = [[]]
+    for t in tokens:
+        if t.token_type == TokenType.DOT:
+            groups.append([])
+        else:
+            groups[-1].append(t)
+    parts = []
+    for g in groups:
+        text = s[g[0].start : g[-1].end + 1] if g else ""
+        if len(g) == 1 and g[0].token_type == TokenType.IDENTIFIER and g[0].text:
+            parts.append((g[0].text, True))
+        elif text and not set(text) & set("`\"';()"):
+            parts.append((text, False))
+        else:
+            raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
+    if len(parts) > 3 or tokens[0].start != 0 or tokens[-1].end != len(s) - 1:
+        raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
+    return tuple(parts)
+
+
+def source_name(source: str) -> str:
+    """`db.table` unquoted, as dictGet* takes a dictionary's name."""
+    t = source_table(source)
+    return f"{t.db}.{t.name}" if t.db else t.name
 
 
 # Aggregates whose value does not change when an input row repeats. Only these
@@ -521,7 +570,7 @@ class Planner:
         key itself, NULL when the dictionary lacks it, as a LEFT JOIN would."""
         if isinstance(node, exp.Column) and node.table in dict_keys:
             ds = self.dataset(node.table)
-            name = exp.Literal.string(source_table(ds.source).sql())
+            name = exp.Literal.string(source_name(ds.source))
             key = dict_keys[node.table].copy()
             if node.name.upper() == (self.catalog[ds.name].dictionary_key or "").upper():
                 has = exp.Anonymous(this="dictHas", expressions=[name, key])

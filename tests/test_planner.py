@@ -7,6 +7,7 @@ from ossie_clickhouse.planner import (
     Planner,
     Query,
     TableInfo,
+    source_name,
     source_table,
     unanswerable_metrics,
 )
@@ -20,10 +21,56 @@ def test_source_table():
     assert source_table("tpcds.public.store_sales").sql() == "tpcds.store_sales"
     assert source_table("db.t").sql() == "db.t"
     assert source_table("t").sql() == "t"
+    assert source_table("db.select").sql(dialect="clickhouse") == "db.select"
+    assert source_table("db.x-y").sql(dialect="clickhouse") == 'db."x-y"'
+    assert source_table("  db.t ").sql() == "db.t"
+
+
+@pytest.mark.parametrize(
+    "source", ["SELECT * FROM t", "db.t x", "db . t", "numbers(10)", "s3('x')", "db.t(1)"]
+)
+def test_query_source_refused(source):
+    # Table functions included: one such dataset must not break introspection.
     with pytest.raises(PlanError, match="query sources"):
-        source_table("SELECT * FROM t")
+        source_table(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "db.",
+        ".t",
+        "db..t",
+        "a.b.c.d",
+        "`db`.``",
+        "`db`.``.t",
+        "db.x`y`",
+        "db.t;",
+        "db.t -- legacy",
+        "/* x */ db.t",
+        "db.o'brien\\x",
+    ],
+)
+def test_garbled_source_refused(source):
+    # Refused, not read as a neighbouring table with the rest dropped.
     with pytest.raises(PlanError, match="cannot map"):
-        source_table("a.b.c.d")
+        source_table(source)
+
+
+@pytest.mark.parametrize(
+    "source, db, name",
+    [
+        ("`shop`.`orders`", "shop", "orders"),  # as dbt-clickhouse writes it
+        ("`my.db`.`orders`", "my.db", "orders"),
+        ('"Sales DB".orders', "Sales DB", "orders"),
+        ('`a`."b.c".`t`', "a", "t"),
+    ],
+)
+def test_source_table_quoted(source, db, name):
+    t = source_table(source)
+    assert (t.db, t.name) == (db, name)
+    assert source_table(t.sql(dialect="clickhouse")) == t  # quotes kept in SQL
+    assert source_name(source) == f"{db}.{name}"
 
 
 def test_single_dataset_no_join():

@@ -15,6 +15,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "history.yaml"
 SETUP = """
 CREATE DATABASE IF NOT EXISTS ossie_test;
 DROP DICTIONARY IF EXISTS ossie_test.country;
+DROP DICTIONARY IF EXISTS ossie_test.`country names`;
+DROP DICTIONARY IF EXISTS ossie_test.`country.v2`;
 DROP TABLE IF EXISTS ossie_test.orders;
 DROP TABLE IF EXISTS ossie_test.country_src;
 CREATE TABLE ossie_test.orders (order_id UInt32, amount Float64, country_code String, ver UInt32)
@@ -24,6 +26,10 @@ INSERT INTO ossie_test.orders VALUES (1, 15, 'DE', 2);
 CREATE TABLE ossie_test.country_src (code String, name String) ENGINE = Memory;
 INSERT INTO ossie_test.country_src VALUES ('DE', 'Germany'), ('FR', 'France');
 CREATE DICTIONARY ossie_test.country (code String, name String) PRIMARY KEY code
+  SOURCE(CLICKHOUSE(TABLE 'country_src' DB 'ossie_test')) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
+CREATE DICTIONARY ossie_test.`country names` (code String, name String) PRIMARY KEY code
+  SOURCE(CLICKHOUSE(TABLE 'country_src' DB 'ossie_test')) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
+CREATE DICTIONARY ossie_test.`country.v2` (code String, name String) PRIMARY KEY code
   SOURCE(CLICKHOUSE(TABLE 'country_src' DB 'ossie_test')) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0);
 """
 
@@ -64,6 +70,37 @@ def test_dictionary_key_column_is_the_join_key(ex):
     r = ex.execute(Query(metrics=("revenue",), dimensions=("country.code",)))
     assert "dictGetOrNull('ossie_test.country', 'code'" not in r.sql
     assert set(r.rows) == {(None, 30.0), ("FR", 20.0), ("DE", 15.0)}
+
+
+def _with_sources(ex, tmp_path, **sources):
+    """Executor over the fixture with datasets' sources replaced."""
+    text = FIXTURE.read_text()
+    for old, new in sources.items():
+        text = text.replace(f"source: ossie_test.{old}\n", f"source: '{new}'\n")
+    p = tmp_path / "quoted.yaml"
+    p.write_text(text)
+    return Executor(ex.client, load_model(p))
+
+
+def test_quoted_source(ex, tmp_path):
+    # dbt-clickhouse writes every source quoted.
+    q = _with_sources(ex, tmp_path, orders="`ossie_test`.`orders`", country='"ossie_test".country')
+    r = q.execute(Query(metrics=("revenue",), dimensions=("country.name",)))
+    assert 'FROM "ossie_test"."orders" AS orders FINAL' in r.sql
+    assert "dictGetOrNull('ossie_test.country', 'name'" in r.sql
+    assert set(r.rows) == {(None, 30.0), ("France", 20.0), ("Germany", 15.0)}
+
+
+@pytest.mark.parametrize("name", ["country names", "country.v2"])
+def test_dictionary_with_special_name(ex, tmp_path, name):
+    # dictGet* takes the name unquoted and cannot address one with a dot: join it.
+    q = _with_sources(ex, tmp_path, country=f"ossie_test.`{name}`")
+    r = q.execute(Query(metrics=("revenue",), dimensions=("country.name",)))
+    if "." in name:
+        assert f'LEFT JOIN ossie_test."{name}" AS country' in r.sql and "dictGet" not in r.sql
+    else:
+        assert f"dictGetOrNull('ossie_test.{name}', 'name'" in r.sql
+    assert set(r.rows) == {(None, 30.0), ("France", 20.0), ("Germany", 15.0)}
 
 
 def test_dictionary_joined_on_superset_of_its_key(ex, tmp_path):
@@ -113,14 +150,21 @@ def test_nan_and_inf_become_none(ex):
     assert ex.execute(Query(metrics=("zero_ratio",))).rows == [(None,)]
 
 
-def test_odd_source_names_do_not_break_introspection(ex, tmp_path):
-    p = tmp_path / "quoted.yaml"
-    text = FIXTURE.read_text().replace(
-        "source: ossie_test.country\n", "source: ossie_test.o'brien\\x\n"
-    )
+@pytest.mark.parametrize(
+    "source, problem",
+    [
+        ("ossie_test.`o'brien\\x`", "not found in ClickHouse"),
+        ("ossie_test.o'brien\\x", "cannot map source"),
+        ("numbers(10)", "query sources are not supported yet: 'numbers(10)'"),
+    ],
+)
+def test_odd_sources_do_not_break_introspection(ex, tmp_path, source, problem):
+    p = tmp_path / "odd.yaml"
+    text = FIXTURE.read_text().replace("source: ossie_test.country\n", f"source: {source}\n")
     p.write_text(text)
-    problems = Executor(ex.client, load_model(p)).check()
-    assert any('source "ossie_test.o\'brien\\\\x" not found' in x for x in problems)
+    odd = Executor(ex.client, load_model(p))
+    assert any(problem in x for x in odd.check())
+    assert odd.execute(Query(metrics=("revenue",))).rows == [(65.0,)]
 
 
 def test_check_reports_database_level_problems(ex, tmp_path):

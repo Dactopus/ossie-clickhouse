@@ -155,7 +155,9 @@ class Executor:
         catalog: Catalog = {}
         for db, name, engine, _full in rows:
             key = None
-            if engine == "Dictionary":
+            # dictGet* splits its name on dots and ignores quoting (string and
+            # identifier forms, 26.9): a dotted name is joined as a table.
+            if engine == "Dictionary" and "." not in db + name:
                 keys = columns[(db, name)] - attributes.get((db, name), set())
                 key = next(iter(keys)) if len(keys) == 1 else None
             for ds in tables[(db, name)]:
@@ -179,9 +181,12 @@ class Executor:
         for ds in self.full_model.datasets:
             info = self.catalog.get(ds.name)
             if info is None:
-                problems.append(
-                    f"dataset {ds.name!r}: source {ds.source!r} not found in ClickHouse"
-                )
+                try:
+                    source_table(ds.source)
+                    why = f"source {ds.source!r} not found in ClickHouse"
+                except PlanError as e:
+                    why = str(e)
+                problems.append(f"dataset {ds.name!r}: {why}")
                 continue
             needed: dict[str, str] = {}
             for key in declared_keys(ds):

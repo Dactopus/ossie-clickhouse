@@ -17,6 +17,11 @@ default database. Leave the database out when the deployment chooses it,
 so one model serves a database per customer, or dev and prod side by side.
 `validate --url` and `serve` print the database they read.
 
+A name with a dot, a space or another special character is quoted with
+backticks or double quotes, as in SQL: `` `my.db`.`orders` `` or
+`"Sales DB".orders`. dbt-clickhouse writes every source quoted, and that
+works as is.
+
 A three-part `database.schema.table` is accepted and the middle part
 dropped, since ClickHouse has no schema level; this is what lets a model
 written for another warehouse run unchanged. A query as a source is not
@@ -182,7 +187,8 @@ a field over it is read as the joining column, NULL when the dictionary
 has no such key, exactly as the join would answer. This is learned from
 [`system.dictionaries`](https://clickhouse.com/docs/operations/system-tables/dictionaries), which the connected user needs a grant
 to read; without it the dictionary is joined like a table, which is still
-correct, only slower.
+correct, only slower. The same happens when the dictionary's or its
+database's name has a dot: `dictGetOrNull` cannot address it.
 
 ## Names
 
