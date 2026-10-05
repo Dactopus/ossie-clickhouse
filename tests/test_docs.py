@@ -1,17 +1,24 @@
 """docs/index.html quotes what the planner writes; these keep the quotes true."""
 
 import html
+import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
+import clickhouse_connect
 import pytest
+from sqlglot import exp
 
 from ossie_clickhouse import load_model
-from ossie_clickhouse.access import Hidden, restrict
-from ossie_clickhouse.planner import PlanError, Planner, Query
+from ossie_clickhouse.executor import Executor
+from ossie_clickhouse.planner import PlanError, Query
+from ossie_clickhouse.translate import parse, pick_expression
 
 ROOT = Path(__file__).parents[1]
 PAGE = (ROOT / "docs" / "index.html").read_text()
+SQL = html.unescape(re.search(r'<pre id="sql">(.*?)</pre>', PAGE, re.S)[1])
+STEPS = json.loads(re.search(r"const STEPS = (\[.*?\]);\n", PAGE, re.S)[1])
 MODEL = load_model(str(ROOT / "tests" / "fixtures" / "web_analytics.yaml"))
 QUESTION = Query(
     metrics=("revenue", "purchases"),
@@ -20,25 +27,72 @@ QUESTION = Query(
 )
 
 
-def refusal(model, q: Query) -> str:
+class FakeClickHouse:
+    """Answers the Executor's introspection as a user of the database dactopus,
+    where dactopus-data-models builds every table as plain MergeTree
+    (dbt-clickhouse's default for incremental delete+insert)."""
+
+    url = "http://fake:8123"
+
+    def __init__(self, without: tuple[str, str] | None = None):
+        self.columns = {}
+        for ds in MODEL.datasets:
+            cols = {
+                c.name
+                for f in ds.fields
+                for c in parse(pick_expression(f.expression)).find_all(exp.Column)
+            }
+            self.columns[ds.source] = sorted(
+                cols - {without[1]} if without and without[0] == ds.source else cols
+            )
+
+    def query(self, sql, parameters=None):
+        if "currentUser()" in sql:
+            rows = [("analyst", [], "dactopus")]
+        elif "system.tables" in sql:
+            rows = [("dactopus", t, "MergeTree", "MergeTree") for t in self.columns]
+        elif "system.columns" in sql:
+            rows = [("dactopus", t, c) for t, c in self.columns.items()]
+        else:
+            rows = []
+        return SimpleNamespace(result_rows=rows)
+
+
+def refusal(ex: Executor, q: Query) -> str:
     with pytest.raises(PlanError) as e:
-        Planner(model).sql(q)
+        ex.planner.sql(q)
     return str(e.value)
 
 
 def test_page_shows_the_sql_the_planner_writes():
-    shown = html.unescape(re.search(r'<pre id="sql">(.*?)</pre>', PAGE, re.S)[1])
-    assert shown == Planner(MODEL).sql(QUESTION, pretty=True)
+    assert STEPS[0][2] == QUESTION.filters[0]
+    assert SQL == Executor(FakeClickHouse(), MODEL).planner.sql(QUESTION, pretty=True)
+
+
+def test_page_marks_every_sql_line_and_only_lines_that_exist():
+    lines = SQL.split("\n")
+    starts = [s for step in STEPS for s in step[3]]
+    assert [s for s in starts if not any(line.startswith(s) for line in lines)] == []
+    assert [line for line in lines if not any(line.startswith(s) for s in starts)] == []
 
 
 def test_page_quotes_the_fan_out_refusal():
     q = Query(metrics=("session_conversion_rate",), dimensions=("purchases.currency",))
-    assert refusal(MODEL, q) in PAGE
+    assert STEPS[6][2] == refusal(Executor(FakeClickHouse(), MODEL), q)
 
 
 def test_page_quotes_what_a_user_without_revenue_gets():
-    trimmed = restrict(MODEL, Hidden(fields=frozenset({"purchases.revenue"})))
-    metrics = {m.name for m in trimmed.metrics}
+    ex = Executor(FakeClickHouse(without=("purchases", "revenue")), MODEL)
+    metrics = {m.name for m in ex.model.metrics}
     assert {"revenue", "average_order_value"}.isdisjoint(metrics)
     assert "revenue_usd" in metrics
-    assert refusal(trimmed, QUESTION) in PAGE
+    assert STEPS[7][2] == refusal(ex, QUESTION)
+
+
+def test_page_figures_come_from_the_ga4_sample(clickhouse):
+    if not clickhouse.query("EXISTS TABLE dactopus.purchases").result_rows[0][0]:
+        pytest.skip("GA4 sample not loaded into the database dactopus (see dactopus-data-models)")
+    ex = Executor(clickhouse_connect.get_client(dsn=clickhouse.url, database="dactopus"), MODEL)
+    month, source_medium, currency, revenue, purchases = ex.execute(QUESTION).rows[0]
+    row = f"{month:%B %Y}, {source_medium}, {currency}: revenue {revenue:,.0f}"
+    assert f"{row} from {purchases} purchases" in STEPS[5][1]

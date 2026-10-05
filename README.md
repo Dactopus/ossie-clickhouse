@@ -66,7 +66,7 @@ known object. The other modules are internal.
 
 ## How a question becomes SQL
 
-<a href="https://dactopus.github.io/ossie-clickhouse/"><img src="docs/architecture.svg" width="680" alt="How ossie-clickhouse answers a question: an AI agent asks through the MCP server or the CLI; the Ossie model is cut down to what the connected ClickHouse user may read, as system tables show, and a policy file may hide more; the planner and translator write one SELECT or refuse; the executor runs it in ClickHouse as that user."></a>
+<a href="https://dactopus.github.io/ossie-clickhouse/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/architecture.svg#dark"><img src="docs/architecture.svg#light" width="680" alt="How ossie-clickhouse answers a question: an AI agent asks through the MCP server or the CLI; the Ossie model is cut down to what the connected ClickHouse user may read, as system tables show, and a policy file may hide more; the planner and translator write one SELECT or refuse; the executor runs it in ClickHouse as that user."></picture></a>
 
 Click the diagram for the [interactive version](https://dactopus.github.io/ossie-clickhouse/):
 one question from an agent followed to its SQL, line by line, and two
