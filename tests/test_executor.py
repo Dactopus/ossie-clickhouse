@@ -3,6 +3,7 @@ table and a dictionary dimension, created here."""
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -49,6 +50,36 @@ def test_introspection(ex):
     assert ex.catalog["country"].engine == "Dictionary"
     assert ex.catalog["country"].dictionary_key == "code"
     assert overrides(ex.model.datasets[1]) == {"dedup": "none"}
+
+
+@pytest.mark.parametrize(
+    "engine, final",
+    [
+        ("ReplacingMergeTree", True),
+        ("ReplicatedReplacingMergeTree", True),  # a cluster with replication
+        ("SharedReplacingMergeTree", True),  # ClickHouse Cloud
+        ("MergeTree", False),
+        ("ReplicatedMergeTree", False),
+    ],
+)
+def test_final_for_every_replacing_engine(engine, final):
+    """Engine names as system.tables reports them; no server needed."""
+
+    class Client:
+        url = "http://fake:8123"
+
+        def query(self, sql, parameters=None):
+            if "currentUser()" in sql:
+                rows = [("u", [], "ossie_test")]
+            elif "system.tables" in sql:
+                rows = [(db, t, engine, engine) for db, t in parameters["pairs"]]
+            else:
+                rows = []
+            return SimpleNamespace(result_rows=rows)
+
+    catalog = Executor(Client(), load_model(FIXTURE)).catalog
+    assert catalog["orders"].dedup is final
+    assert not catalog["orders_raw"].dedup  # overridden
 
 
 def test_dedup_with_final(ex):

@@ -94,7 +94,7 @@ const INFO = {
   trim: ["Access trim", "Removes from the model every dataset, field, relationship and metric the user cannot read, and those whose expression does not translate. A hidden object never appears in SQL, errors or suggestions.", ""],
   plan: ["Planner and translator", "Picks one root dataset and joins only many-to-one along the model's relationships, so no row is counted twice; refuses a question that would. Translates expressions to ClickHouse functions, checked by value against DuckDB. The same question and model always give the same SQL.", ""],
   exec: ["Executor", "Runs the SELECT as the connected user and returns the rows with the SQL. ClickHouse's nan and inf come back as NULL.", ""],
-  sys: ["System tables", "system.tables, system.columns and system.dictionaries, read as the connected user, list only what that user may read. Engines shape the SQL: a Replacing* table, which keeps old versions of a row, is read with FINAL; a single-key dictionary with dictGetOrNull. Nothing to configure.", ""],
+  sys: ["System tables", "system.tables, system.columns and system.dictionaries, read as the connected user, list only what that user may read. Engines shape the SQL: a ReplacingMergeTree table, replicated or on ClickHouse Cloud, which keeps old versions of a row, is read with FINAL; a single-key dictionary with dictGetOrNull. Nothing to configure.", ""],
   tables: ["Your tables", "The data, read as the connected user: table and column grants and row policies apply as to any hand-written query.", "--url http://user:password@host:8123/database"]
 };
 // [boxes, text, monospace line, starts of the SQL lines to mark]; JSON, so tests/test_docs.py can read it

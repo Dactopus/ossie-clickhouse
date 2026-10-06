@@ -146,8 +146,9 @@ just as well.
 ## Deduplication
 
 Tables with an engine in the
-[`Replacing*`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
-family keep change history and are read with
+[`ReplacingMergeTree`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
+family (`ReplicatedReplacingMergeTree` on a cluster,
+`SharedReplacingMergeTree` on ClickHouse Cloud) keep change history and are read with
 [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier), so a
 metric sees each row once. This is learned from
 [`system.tables`](https://clickhouse.com/docs/operations/system-tables/tables). To read such a table raw (for example, to count
@@ -178,7 +179,7 @@ CREATE VIEW shop.orders_current AS
 SELECT * FROM shop.orders FINAL WHERE _peerdb_is_deleted = 0
 ```
 
-A view is not a `Replacing*` table, so it is read as is.
+A view is not a `ReplacingMergeTree` table, so it is read as is.
 
 ## Dictionaries
 
