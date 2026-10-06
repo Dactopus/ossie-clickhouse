@@ -3,7 +3,6 @@ table and a dictionary dimension, created here."""
 
 import re
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +10,7 @@ from ossie_clickhouse import load_model
 from ossie_clickhouse.cli import main
 from ossie_clickhouse.executor import Executor, overrides
 from ossie_clickhouse.planner import PlanError, Query
+from tests.conftest import FakeClickHouse
 
 FIXTURE = Path(__file__).parent / "fixtures" / "history.yaml"
 SETUP = """
@@ -52,34 +52,81 @@ def test_introspection(ex):
     assert overrides(ex.model.datasets[1]) == {"dedup": "none"}
 
 
+ORDERS = {"order_id", "amount", "country_code"}
+REPLICATED = ("ReplicatedReplacingMergeTree", "", ("", ""), ORDERS)
+PLAIN = ("MergeTree", "", ("", ""), ORDERS)
+
+
+def distributed(table: str) -> tuple:
+    return ("Distributed", f"Distributed('c', 'ossie_test', '{table}', rand())", ("", ""), ORDERS)
+
+
+def view(target: str) -> tuple:
+    return ("MaterializedView", "", ("ossie_test", target), ORDERS)
+
+
 @pytest.mark.parametrize(
-    "engine, final",
+    "orders, under, final",
     [
-        ("ReplacingMergeTree", True),
-        ("ReplicatedReplacingMergeTree", True),  # a cluster with replication
-        ("SharedReplacingMergeTree", True),  # ClickHouse Cloud
-        ("MergeTree", False),
-        ("ReplicatedMergeTree", False),
+        (("ReplacingMergeTree", "", ("", ""), ORDERS), None, True),
+        (REPLICATED, None, True),  # a cluster with replication
+        (("SharedReplacingMergeTree", "", ("", ""), ORDERS), None, True),  # ClickHouse Cloud
+        (PLAIN, None, False),
+        (("ReplicatedMergeTree", "", ("", ""), ORDERS), None, False),
+        # A cluster's Distributed table over the replicated table on each shard.
+        (distributed("orders_local"), REPLICATED, True),
+        (distributed("orders_local"), PLAIN, False),  # FINAL would be an error
+        (view("orders_local"), REPLICATED, True),
+        (view("orders_local"), PLAIN, False),
+        (distributed("orders_local"), view("orders_store"), True),  # store: Replacing
+        (distributed("orders_local"), None, False),  # local table hidden: undecided
     ],
 )
-def test_final_for_every_replacing_engine(engine, final):
-    """Engine names as system.tables reports them; no server needed."""
+def test_final_follows_the_engine_of_the_stored_rows(orders, under, final):
+    """Engines as system.tables reports them; no server needed."""
+    tables = {
+        ("ossie_test", "orders"): orders,
+        ("ossie_test", "orders_store"): REPLICATED,
+        ("ossie_test", "country"): ("Memory", "", ("", ""), {"code", "name"}),
+    }
+    if under:
+        tables["ossie_test", "orders_local"] = under
+    ex = Executor(FakeClickHouse(tables), load_model(FIXTURE))
+    assert ex.catalog["orders"].dedup is final
+    assert ("FINAL" in ex.planner.sql(Query(metrics=("revenue",)))) is final
+    assert not ex.catalog["orders_raw"].dedup  # overridden
+    undecided = [p for p in ex.check() if "cannot see" in p]
+    if orders[0] == "Distributed" and not under:
+        # orders_raw says "none": only orders is undecided, and the hidden
+        # table's name stays out of the message.
+        assert len(undecided) == 1 and "'orders'" in undecided[0]
+        assert "orders_local" not in undecided[0]
+    else:
+        assert undecided == []
 
-    class Client:
-        url = "http://fake:8123"
 
+def test_view_target_unknown_before_clickhouse_26_6():
+    class Older(FakeClickHouse):
         def query(self, sql, parameters=None):
-            if "currentUser()" in sql:
-                rows = [("u", [], "ossie_test")]
-            elif "system.tables" in sql:
-                rows = [(db, t, engine, engine) for db, t in parameters["pairs"]]
-            else:
-                rows = []
-            return SimpleNamespace(result_rows=rows)
+            if "target_table" in sql:
+                raise RuntimeError("Unknown expression identifier `target_database`")
+            return super().query(sql, parameters)
 
-    catalog = Executor(Client(), load_model(FIXTURE)).catalog
-    assert catalog["orders"].dedup is final
-    assert not catalog["orders_raw"].dedup  # overridden
+    tables = {
+        ("ossie_test", "orders"): view("orders_local"),
+        ("ossie_test", "orders_local"): REPLICATED,
+    }
+    ex = Executor(Older(tables), load_model(FIXTURE))
+    assert not ex.catalog["orders"].dedup and ex.undecided == {"orders"}
+
+
+def test_dedup_final_forces_final(tmp_path):
+    # For a source whose stored rows this user cannot see.
+    p = tmp_path / "forced.yaml"
+    p.write_text(FIXTURE.read_text().replace('{"dedup": "none"}', '{"dedup": "final"}'))
+    tables = {("ossie_test", "orders"): distributed("orders_local")}
+    ex = Executor(FakeClickHouse(tables), load_model(p))
+    assert ex.catalog["orders_raw"].dedup and not ex.catalog["orders"].dedup
 
 
 def test_dedup_with_final(ex):
@@ -88,6 +135,37 @@ def test_dedup_with_final(ex):
     assert r.rows == [(65.0,)]  # 15 + 20 + 30, not 10 + 15 + 20 + 30
     raw = ex.execute(Query(metrics=("raw_revenue",)))
     assert "FINAL" not in raw.sql and raw.rows == [(75.0,)]
+
+
+VIEW = "MATERIALIZED VIEW ossie_test.wrapped TO ossie_test.{} AS SELECT * FROM ossie_test.feed"
+MERGE = "TABLE ossie_test.wrapped AS ossie_test.orders ENGINE = Merge({}, '^{}$')"
+
+
+@pytest.mark.parametrize(
+    "wrapped, revenue",
+    [
+        (VIEW.format("orders"), 65.0),
+        (MERGE.format("ossie_test", "orders"), 65.0),
+        (MERGE.format("REGEXP('^ossie_t')", "orders"), 65.0),
+        # FINAL over a plain MergeTree would be an error on the view.
+        (VIEW.format("plain"), 75.0),
+        (MERGE.format("ossie_test", "plain"), 75.0),
+    ],
+)
+def test_final_through_a_view_or_merge_table(ex, tmp_path, wrapped, revenue):
+    ex.client.command("DROP TABLE IF EXISTS ossie_test.wrapped")
+    ex.client.command(
+        "CREATE TABLE IF NOT EXISTS ossie_test.feed AS ossie_test.orders ENGINE = Null"
+    )
+    ex.client.command(
+        "CREATE TABLE IF NOT EXISTS ossie_test.plain ENGINE = MergeTree ORDER BY order_id"
+        " AS SELECT * FROM ossie_test.orders"  # every version: 75
+    )
+    ex.client.command(f"CREATE {wrapped}")
+    r = _with_sources(ex, tmp_path, orders="ossie_test.wrapped").execute(
+        Query(metrics=("revenue",))
+    )
+    assert r.rows == [(revenue,)] and ("FINAL" in r.sql) is (revenue == 65.0)
 
 
 def test_dictionary_read_with_dictget(ex):

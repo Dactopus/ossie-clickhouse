@@ -95,7 +95,8 @@ questions it refuses.
   ClickHouse as written: what a caller may run there is decided by
   ClickHouse grants and quotas, not by this library.
 - Tables with a [`ReplacingMergeTree`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
-  engine, replicated or on ClickHouse Cloud, are read with [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier);
+  engine, replicated or on ClickHouse Cloud, and `Distributed` tables,
+  materialized views and `Merge` tables over them, are read with [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier);
   single-key [dictionaries](https://clickhouse.com/docs/sql-reference/dictionaries) are read with
   `dictGetOrNull` instead of a join. Both are learned from `system.tables`
   and `system.dictionaries`, not configured.

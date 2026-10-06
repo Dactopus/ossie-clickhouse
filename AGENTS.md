@@ -83,10 +83,14 @@ Python library with a CLI entry point. The parts that constrain code:
 - ClickHouse specifics come from introspecting `system.tables`,
   `system.columns` and `system.dictionaries`, not from asking the user.
   `ReplacingMergeTree` engines, `Replicated` and Cloud's `Shared` too, are
-  read with `FINAL` (measured faster than `argMax`);
-  single-key dictionaries with `dictGetOrNull` instead of a join. Overrides
-  go in the model's `custom_extensions` under `vendor_name: CLICKHOUSE` as
-  JSON, currently `{"dedup": "none"}`.
+  read with `FINAL` (measured faster than `argMax`), and so is a
+  `Distributed` table, materialized view or `Merge` table that reads one;
+  `FINAL` on one that reads a plain `MergeTree` is an error. When the table
+  read is hidden from the user, `validate` reports it and no `FINAL` is
+  added. Single-key dictionaries with `dictGetOrNull` instead of a join.
+  Overrides go in the model's `custom_extensions` under
+  `vendor_name: CLICKHOUSE` as JSON, currently `{"dedup": "none"}` or
+  `{"dedup": "final"}`.
 - The planner never talks to the database; it takes an optional `Catalog`
   the executor built. Keep that boundary.
 - Query planning is deterministic: datasets from `source`, joins from

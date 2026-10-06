@@ -151,7 +151,44 @@ family (`ReplicatedReplacingMergeTree` on a cluster,
 `SharedReplacingMergeTree` on ClickHouse Cloud) keep change history and are read with
 [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier), so a
 metric sees each row once. This is learned from
-[`system.tables`](https://clickhouse.com/docs/operations/system-tables/tables). To read such a table raw (for example, to count
+[`system.tables`](https://clickhouse.com/docs/operations/system-tables/tables), and it looks
+through tables that hold no rows of their own:
+
+- a [`Distributed`](https://clickhouse.com/docs/engines/table-engines/special/distributed)
+  table, the usual source on a cluster, is read with `FINAL` when its
+  table on each shard is such a table;
+- a [materialized view](https://clickhouse.com/docs/sql-reference/statements/create/view#materialized-view),
+  when the table it writes to is;
+- a [`Merge`](https://clickhouse.com/docs/engines/table-engines/special/merge) table,
+  when any table it reads is. ClickHouse applies `FINAL` to those and
+  reads the rest as they are.
+
+`FINAL` on a `Distributed` table merges versions within each shard, not
+across shards: every version of a row must land on the same shard, so
+shard by the table's key (for example `Distributed(cluster, shop,
+orders_local, cityHash64(order_id))`), not by `rand()`.
+
+The table on each shard must exist on the server the URL points to, and
+the connected user must see it, as must the table a materialized view
+writes to (reading the view needs no grant on that table). When it is
+hidden, or the server is older than ClickHouse 26.6, which does not name
+the table a view writes to, this project cannot tell whether the stored
+rows keep versions:
+the dataset is read without `FINAL`, and `validate --url` names it, but
+only when run with the URL of the user who cannot see it, as the MCP
+server or analysts connect. When their rights are narrower than yours,
+run it with their URL, or say so in the model:
+
+```yaml
+- name: orders
+  source: shop.orders
+  custom_extensions:
+    - vendor_name: CLICKHOUSE
+      data: '{"dedup": "final"}'
+```
+
+`"final"` adds `FINAL` whatever the engine, an error if the stored rows
+are in a plain `MergeTree`. To read a table raw (for example, to count
 versions), turn it off per dataset:
 
 ```yaml
@@ -164,7 +201,7 @@ versions), turn it off per dataset:
 
 `custom_extensions`, the spec's escape hatch for vendor settings, with
 `vendor_name: CLICKHOUSE` is the namespace this project owns; `data` is
-JSON. `dedup` is the only key today.
+JSON. `dedup` (`"final"` or `"none"`) is the only key today.
 
 `FINAL` drops deleted rows only when the engine declares its delete
 column, as in `ReplacingMergeTree(version, is_deleted)`. CDC tools that
@@ -179,7 +216,7 @@ CREATE VIEW shop.orders_current AS
 SELECT * FROM shop.orders FINAL WHERE _peerdb_is_deleted = 0
 ```
 
-A view is not a `ReplacingMergeTree` table, so it is read as is.
+A view (not a materialized one) holds no versions of its own, so it is read as is.
 
 ## Dictionaries
 
