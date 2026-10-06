@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from dataclasses import dataclass
 
 import clickhouse_connect
@@ -31,6 +32,11 @@ from ossie_clickhouse.translate import parse, pick_expression, untranslatable
 
 DEFAULT_URL = "http://127.0.0.1:8123"
 VENDOR = "CLICKHOUSE"
+TABLES = "SELECT database, name, engine, engine_full FROM system.tables"
+# engine_full as ClickHouse writes it back: arguments as quoted strings.
+_STRING = r"'((?:[^'\\]|\\.)*)'"
+_DISTRIBUTED = re.compile(rf"Distributed\({_STRING}, {_STRING}, {_STRING}")
+_MERGE = re.compile(rf"Merge\((REGEXP\()?{_STRING}\)?, {_STRING}")
 
 
 def connect(url: str | None = None):
@@ -43,7 +49,8 @@ def connect(url: str | None = None):
 
 
 def overrides(ds: OssieDataset) -> dict:
-    """Our `custom_extensions` entry for a dataset, parsed. Keys: dedup ("final" | "none")."""
+    """Our `custom_extensions` entry for a dataset, parsed. Keys: dedup ("final" | "none");
+    without it, FINAL where the source keeps row versions."""
     for ext in ds.custom_extensions or []:
         if ext.vendor_name.upper() == VENDOR:
             return json.loads(ext.data)
@@ -132,9 +139,7 @@ class Executor:
         params = {"pairs": list(tables)}  # bound server-side: names never enter SQL text
         pairs = "{pairs:Array(Tuple(String, String))}"
         rows = self.client.query(
-            "SELECT database, name, engine, engine_full FROM system.tables "
-            f"WHERE (database, name) IN {pairs}",
-            parameters=params,
+            f"{TABLES} WHERE (database, name) IN {pairs}", parameters=params
         ).result_rows
         cols = self.client.query(
             "SELECT database, table, groupArray(name) FROM system.columns "
@@ -153,23 +158,71 @@ class Executor:
         attributes = {(db, n): set(a) for db, n, a in dicts}
 
         catalog: Catalog = {}
-        for db, name, engine, _full in rows:
+        self.undecided: set[str] = set()  # datasets whose need for FINAL this user cannot see
+        for db, name, engine, full in rows:
             key = None
             # dictGet* splits its name on dots and ignores quoting (string and
             # identifier forms, 26.9): a dotted name is joined as a table.
             if engine == "Dictionary" and "." not in db + name:
                 keys = columns[(db, name)] - attributes.get((db, name), set())
                 key = next(iter(keys)) if len(keys) == 1 else None
+            versions = self._keeps_versions((db, name), engine, full)
             for ds in tables[(db, name)]:
+                mode = overrides(ds).get("dedup")
+                if versions is None and mode is None:
+                    self.undecided.add(ds.name)
                 catalog[ds.name] = TableInfo(
                     engine=engine,
                     columns=columns.get((db, name), frozenset()),
-                    # Replicated* on clusters, Shared* on ClickHouse Cloud.
-                    dedup=engine.endswith("ReplacingMergeTree")
-                    and overrides(ds).get("dedup", "final") != "none",
+                    dedup=mode == "final" or (mode != "none" and bool(versions)),
                     dictionary_key=key,
                 )
         return catalog
+
+    def _keeps_versions(self, table, engine, full, depth=0) -> bool | None:
+        """Whether reading a table needs FINAL: it is a ReplacingMergeTree
+        (Replicated* on clusters, Shared* on ClickHouse Cloud), or reads one as
+        a Distributed table, a materialized view or a Merge table. FINAL on any
+        of them reaches the stored rows; on one over a plain MergeTree it is an
+        error. None when the table read is hidden from this user or unknown."""
+        if engine.endswith("ReplacingMergeTree"):
+            return True
+        if depth == 3:  # ponytail: wrappers nest this deep at most, and a loop stops here
+            return None
+        if engine == "Distributed":
+            if not (m := _DISTRIBUTED.match(full)):
+                return None
+            target = tuple(_unquote(p) for p in m.groups()[1:])
+        elif engine == "Merge" and (m := _MERGE.match(full)):
+            # FINAL on a Merge table reaches every table it reads that supports
+            # it and skips the rest; a table hidden from this user is not read.
+            regex, db, name = m.groups()
+            where = "match(database, {db:String})" if regex else "database = {db:String}"
+            return any(
+                self._keeps_versions(row[:2], *row[2:], depth + 1)
+                for row in self.client.query(
+                    f"{TABLES} WHERE {where} AND match(name, {{name:String}}) "
+                    "AND (database, name) != {table:Tuple(String, String)}",
+                    parameters={"db": _unquote(db), "name": _unquote(name), "table": table},
+                ).result_rows
+            )
+        elif engine == "MaterializedView":
+            try:
+                target = self.client.query(
+                    "SELECT target_database, target_table FROM system.tables "
+                    "WHERE (database, name) = {t:Tuple(String, String)}",
+                    parameters={"t": table},
+                ).result_rows[0]
+            except Exception:  # added in ClickHouse 26.6: undecided before it
+                return None
+        else:
+            return False
+        rows = self.client.query(
+            TABLES + " WHERE (database, name) = {t:Tuple(String, String)}", parameters={"t": target}
+        ).result_rows
+        if not rows:
+            return None
+        return self._keeps_versions(rows[0][:2], *rows[0][2:], depth + 1)
 
     # --- checks -------------------------------------------------------------
 
@@ -189,6 +242,13 @@ class Executor:
                     why = str(e)
                 problems.append(f"dataset {ds.name!r}: {why}")
                 continue
+            if ds.name in self.undecided:
+                problems.append(
+                    f"dataset {ds.name!r}: {ds.source} reads a table this user cannot see "
+                    "(or, before ClickHouse 26.6, a view's target), so whether it keeps row "
+                    "versions is unknown and it is read without "
+                    'FINAL; set "dedup" to "final" or "none" (see docs/model-authoring.md)'
+                )
             needed: dict[str, str] = {}
             for key in declared_keys(ds):
                 needed.update({c: "key" for c in key})
@@ -218,6 +278,10 @@ class Executor:
         res = self.client.query(sql)
         rows = [tuple(_non_finite_to_none(v) for v in row) for row in res.result_rows]
         return Result(list(res.column_names), rows, sql)
+
+
+def _unquote(s: str) -> str:
+    return re.sub(r"\\(.)", r"\1", s)
 
 
 def _non_finite_to_none(v):

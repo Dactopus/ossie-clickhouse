@@ -7,6 +7,7 @@ elsewhere.
 """
 
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,32 @@ REQUIRED = bool(os.environ.get("OSSIE_CLICKHOUSE_REQUIRED"))
 
 def unavailable(reason: str):
     (pytest.fail if REQUIRED else pytest.skip)(reason)
+
+
+class FakeClickHouse:
+    """Answers the Executor's introspection without a server. ``tables`` maps
+    (database, name) to (engine, engine_full, (target_database, target_table),
+    columns), as system.tables and system.columns would report them."""
+
+    url = "http://fake:8123"
+
+    def __init__(self, tables: dict, user: str = "u", database: str = "default"):
+        self.tables, self.user, self.database = tables, user, database
+
+    def query(self, sql, parameters=None):
+        p = parameters or {}
+        known = [k for k in p.get("pairs") or [p.get("t")] if k in self.tables]
+        if "currentUser()" in sql:
+            rows = [(self.user, [], self.database)]
+        elif "system.columns" in sql:
+            rows = [(*k, sorted(self.tables[k][3])) for k in known]
+        elif "target_table" in sql:
+            rows = [self.tables[k][2] for k in known]
+        elif "system.tables" in sql:
+            rows = [(*k, *self.tables[k][:2]) for k in known]
+        else:
+            rows = []
+        return SimpleNamespace(result_rows=rows)
 
 
 @pytest.fixture(scope="session")

@@ -16,6 +16,18 @@ a minor release may change the Python API.
   `ReplacingMergeTree`, are read with `FINAL`. Before, only plain
   `ReplacingMergeTree` was, and metrics over these tables counted every
   stored version of a row (#29).
+- A `Distributed` table, materialized view or `Merge` table over a
+  `ReplacingMergeTree` table is read with `FINAL`. Before, it was read
+  raw: on a cluster, where models point at the `Distributed` table,
+  metrics counted every stored version of a row. When the table it reads
+  is hidden from the connected user, `validate --url` reports the
+  dataset, which is read without `FINAL` as before.
+
+### Changed
+
+- `{"dedup": "final"}` in a dataset's `custom_extensions` adds `FINAL`
+  whatever the engine, for a source whose stored rows the connected user
+  cannot see. Before, it meant the default.
 
 ## [0.2.4] - 2026-10-05
 
