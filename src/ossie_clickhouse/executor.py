@@ -164,7 +164,8 @@ class Executor:
                 catalog[ds.name] = TableInfo(
                     engine=engine,
                     columns=columns.get((db, name), frozenset()),
-                    dedup=engine.startswith("Replacing")
+                    # Replicated* on clusters, Shared* on ClickHouse Cloud.
+                    dedup=engine.endswith("ReplacingMergeTree")
                     and overrides(ds).get("dedup", "final") != "none",
                     dictionary_key=key,
                 )

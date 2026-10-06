@@ -82,7 +82,8 @@ Python library with a CLI entry point. The parts that constrain code:
   `validate`; so is a metric the planner refuses in every question.
 - ClickHouse specifics come from introspecting `system.tables`,
   `system.columns` and `system.dictionaries`, not from asking the user.
-  `Replacing*` engines are read with `FINAL` (measured faster than `argMax`);
+  `ReplacingMergeTree` engines, `Replicated` and Cloud's `Shared` too, are
+  read with `FINAL` (measured faster than `argMax`);
   single-key dictionaries with `dictGetOrNull` instead of a join. Overrides
   go in the model's `custom_extensions` under `vendor_name: CLICKHOUSE` as
   JSON, currently `{"dedup": "none"}`.

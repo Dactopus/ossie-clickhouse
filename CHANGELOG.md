@@ -7,6 +7,14 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Fixed
+
+- Tables with `ReplicatedReplacingMergeTree`, on a cluster, and
+  `SharedReplacingMergeTree`, which ClickHouse Cloud makes of every
+  `ReplacingMergeTree`, are read with `FINAL`. Before, only plain
+  `ReplacingMergeTree` was, and metrics over these tables counted every
+  stored version of a row (#29).
+
 ## [0.2.4] - 2026-10-05
 
 ### Fixed
