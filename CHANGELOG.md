@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-06
+
 ### Fixed
 
 - Tables with `ReplicatedReplacingMergeTree`, on a cluster, and
