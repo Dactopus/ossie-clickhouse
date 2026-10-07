@@ -705,6 +705,12 @@ class Planner:
 
     def _root(self, used: set[str], touched: dict[str, set[str]]) -> OssieDataset:
         """The dataset that has direct relationships to every other used dataset."""
+        if not used:  # metrics that read no column, such as a constant
+            raise PlanError(
+                "the query reads no column of any dataset, so there are no rows to answer it "
+                "over; add a dimension or a measure that reads a column",
+                Code.UNSUPPORTED_QUERY,
+            )
         candidates = []
         for name in sorted(used):
             ds = self.dataset(name)
@@ -780,7 +786,7 @@ class Planner:
             return name
 
         for ref in q.dimensions:
-            if _EXPRESSION.search(ref):
+            if _EXPRESSION.search(ref) and not self._known(ref):
                 raise PlanError(
                     f"dimension {ref!r}: dimensions are dataset.field names; aliases and "
                     "expressions are not supported yet",
@@ -793,7 +799,7 @@ class Planner:
             group.append(e.copy())
 
         for name in q.measures:
-            if not re.fullmatch(r"\w+", name):
+            if not re.fullmatch(r"\w+", name) and name.upper() not in self._metrics:
                 raise PlanError(
                     f"measure {name!r}: measures are metric names; ad-hoc aggregates and "
                     "window expressions are not supported yet, so ask for a metric of the model",
