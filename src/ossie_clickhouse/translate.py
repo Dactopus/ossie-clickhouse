@@ -15,7 +15,6 @@ import sqlglot
 import sqlglot.errors
 from ossie import OssieDialect, OssieDocument, OssieExpression
 from sqlglot import exp
-from sqlglot.dialects.clickhouse import ClickHouse
 from sqlglot.dialects.dialect import Dialect
 from sqlglot.parser import Parser
 
@@ -36,10 +35,11 @@ def pick_expression(expression: OssieExpression) -> str:
 # --- parsing ----------------------------------------------------------------
 
 
-# Spec signatures of the functions rewritten below, checked on the arguments as
-# written. The default dialect also parses other engines' longer forms, such as
-# Snowflake's REGEXP_COUNT(str, pattern, position, flags); a rewrite would drop
-# the extra arguments and return a different value, so parse() rejects them.
+# Spec signatures of the functions rewritten below or by SQLGlot's ClickHouse
+# generator, checked on the arguments as written. The default dialect also
+# parses other engines' longer forms, such as Snowflake's REGEXP_COUNT(str,
+# pattern, position, flags); a rewrite would drop the extra arguments and
+# return a different value, so parse() rejects them.
 _SIGNATURES = {
     "APPROX_PERCENTILE": ("APPROX_PERCENTILE(expr, p)", 2, 2),
     "TO_DATE": ("TO_DATE(string[, format])", 1, 2),
@@ -216,25 +216,6 @@ def parse(expression: str) -> exp.Expression:
 # --- ClickHouse rewrites ----------------------------------------------------
 
 
-# ClickHouse reads `\` in a quoted name as an escape ("a\x41" is aA); SQLGlot
-# 30.21 emits it as is, so the SQL would name another object. Asked, not
-# assumed: a release that escapes it would otherwise get it escaped twice.
-_RAW_BACKSLASH = exp.to_identifier("\\", quoted=True).sql("clickhouse") == '"\\"'
-
-
-class _ClickHouse(ClickHouse):
-    class Generator(ClickHouse.Generator):
-        def identifier_sql(self, expression: exp.Identifier) -> str:
-            if _RAW_BACKSLASH and "\\" in expression.name:
-                name = expression.name.replace("\\", "\\\\")
-                expression = exp.to_identifier(name, quoted=True)
-            return super().identifier_sql(expression)
-
-
-# Generate ClickHouse SQL with this, never with dialect="clickhouse".
-CLICKHOUSE = _ClickHouse()
-
-
 def _f(name: str, *args: exp.Expression | None) -> exp.Anonymous:
     return exp.Anonymous(this=name, expressions=[a for a in args if a is not None])
 
@@ -327,8 +308,6 @@ def rewrite(node: exp.Expression) -> exp.Expression:
         )
     if isinstance(node, exp.CurrentTime):
         return _f("toTime", _f("now"))
-    if isinstance(node, exp.DayOfYear):
-        return _f("toDayOfYear", node.this)
     if isinstance(node, exp.Extract) and node.name.upper() in _EXTRACT_PARTS:
         return _f(_EXTRACT_PARTS[node.name.upper()], node.expression)
     if isinstance(node, exp.ToChar):
@@ -351,10 +330,6 @@ def rewrite(node: exp.Expression) -> exp.Expression:
         node.parent, exp.RespectNulls | exp.IgnoreNulls
     ):
         return exp.RespectNulls(this=node)
-    if isinstance(node, exp.Contains):
-        return exp.GT(
-            this=_f("position", node.this, node.expression), expression=exp.Literal.number(0)
-        )
     return node
 
 
@@ -374,10 +349,12 @@ def rewrite_tree(tree: exp.Expression) -> exp.Expression:
 
     SQLGlot prints a tree as it stands, without parentheses for precedence, so an
     operator a rewrite builds or an inlined field or metric brings under another
-    operator would be regrouped: ``CONTAINS(a, 'x') + 1`` must not print as
-    ``position(a, 'x') > 0 + 1``. Every operator under another operator ends up in
+    operator would be regrouped: ``net * 2``, ``net`` being ``amount - 5``, must not
+    print as ``amount - 5 * 2``. Every operator under another operator ends up in
     parentheses, except the left operand of the same operator (``a - b - c``), which
-    reads the same without them."""
+    reads the same without them. CONTAINS counts as an operator here: SQLGlot prints
+    it as ``POSITION(a, 'x') > 0`` and parenthesizes that only under a binary
+    operator, so ``-CONTAINS(a, 'x')`` would print as ``-POSITION(a, 'x') > 0``."""
     tree = tree.copy()
     # Bottom-up, so a rewrite that replaces a node still sees its arguments rewritten;
     # Expression.transform does not descend into a replaced node.
@@ -396,7 +373,7 @@ def rewrite_tree(tree: exp.Expression) -> exp.Expression:
         # dot bind tighter than any operator: `(x LIKE 'a!%') ESCAPE '!'` does not parse.
         if index is not None or isinstance(parent, exp.Escape | exp.Dot):
             continue
-        if not (_operator(node) and _operator(parent)):
+        if not ((_operator(node) or isinstance(node, exp.Contains)) and _operator(parent)):
             continue
         if arg_key == "this" and type(node) is type(parent) and isinstance(node, exp.Binary):
             continue
@@ -407,7 +384,7 @@ def rewrite_tree(tree: exp.Expression) -> exp.Expression:
 def to_clickhouse(expression: str | exp.Expression) -> str:
     """ClickHouse SQL for an Ossie expression."""
     tree = parse(expression) if isinstance(expression, str) else expression
-    return rewrite_tree(tree).sql(dialect=CLICKHOUSE)
+    return rewrite_tree(tree).sql(dialect="clickhouse")
 
 
 def translate(expression: OssieExpression) -> str:

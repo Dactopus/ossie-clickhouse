@@ -7,6 +7,13 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires SQLGlot 30.22 or later. Its ClickHouse generator now doubles
+  `\` in quoted names and translates `CONTAINS` and `DAYOFYEAR`, so the
+  rewrites this project carried for them are gone. Values are unchanged;
+  the SQL spells `POSITION` in capitals.
+
 ## [0.2.5] - 2026-10-06
 
 ### Fixed
