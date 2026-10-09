@@ -47,6 +47,12 @@ def test_translate_uses_picked_dialect():
             "toUInt64(GREATEST(CEIL(0.9 * COUNT(x)), 1))))",
         ),
         (
+            "PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1)",
+            "if(COUNT(x) FILTER(WHERE x > 1) = 0, NULL, arrayElement(arraySort(groupArray(x) "
+            "FILTER(WHERE x > 1)), toUInt64(GREATEST(CEIL(0.5 * COUNT(x) FILTER(WHERE x > 1)), "
+            "1))))",
+        ),
+        (
             "PERCENTILE_CONT(0.2 + 0.3) WITHIN GROUP (ORDER BY x DESC)",
             "quantileExactInclusiveOrNull(1 - (0.2 + 0.3))(toFloat64(x))",
         ),

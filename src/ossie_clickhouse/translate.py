@@ -328,6 +328,13 @@ def rewrite(node: exp.Expression) -> exp.Expression:
             exp.Null(),
             _f("arrayElement", values, index),
         )
+    # FILTER applies to one aggregate, and ClickHouse reads it as the -If combinator.
+    # A rewrite above turned the aggregate under it into an expression of several
+    # (PERCENTILE_DISC), so each of them takes the condition.
+    if isinstance(node, exp.Filter) and not isinstance(node.this, exp.AggFunc):
+        for agg in list(node.this.find_all(exp.AggFunc)):
+            agg.replace(exp.Filter(this=agg.copy(), expression=node.expression.copy()))
+        return node.this
     if isinstance(node, exp.CurrentTime):
         return _f("toTime", _f("now"))
     if isinstance(node, exp.Extract) and node.name.upper() in _EXTRACT_PARTS:
