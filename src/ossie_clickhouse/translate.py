@@ -54,6 +54,7 @@ _SIGNATURES = {
     "SPLIT_PART": ("SPLIT_PART(str, delimiter, part)", 3, 3),
     "REGEXP_COUNT": ("REGEXP_COUNT(str, pattern)", 2, 2),
     "CONTAINS": ("CONTAINS(str, substr)", 2, 2),
+    "DAYOFYEAR": ("DAYOFYEAR(date_expr)", 1, 1),
     "DATEADD": ("DATEADD(part, amount, date_expr)", 3, 3),
     "DATEDIFF": ("DATEDIFF(part, start_date, end_date)", 3, 3),
     "DATE_PART": ("DATE_PART(part, date_expr)", 2, 2),
