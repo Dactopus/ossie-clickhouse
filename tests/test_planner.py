@@ -744,6 +744,7 @@ def test_refusal_advises_a_split_only_when_it_answers(query, hint):
         # COUNT(*) next to an aggregate that names its dataset counts that dataset's rows.
         (("average_sale",), ("store.s_state",)),
         (("bulk_sales",), ("store.s_state",)),  # FILTER reads the root
+        (("bulk_median_quantity",), ("store.s_state",)),  # FILTER under a rewrite too
         (("staff_per_extra",), ("store.s_state",)),  # store_extra rows do not repeat
     ],
 )
@@ -756,6 +757,8 @@ def test_allows_aggregates_that_read_root_rows(metrics, dimensions):
         "MEDIAN(DISTINCT store.s_number_employees)",
         average_sale="SUM(store_sales.ss_ext_sales_price) / COUNT(*)",
         bulk_sales="COUNT(*) FILTER (WHERE store_sales.ss_quantity > 50)",
+        bulk_median_quantity="PERCENTILE_DISC(0.5) WITHIN GROUP "
+        "(ORDER BY store_sales.ss_quantity) FILTER (WHERE store_sales.ss_quantity > 50)",
         staff_per_extra="SUM(store.s_number_employees) / SUM(store_extra.s_number_employees)",
     )
     planner.sql(Query(metrics=metrics, dimensions=dimensions))

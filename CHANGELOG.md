@@ -19,6 +19,10 @@ a minor release may change the Python API.
   before, for a `Decimal` column) and NULL for an empty set. Over a
   `Date` or `DateTime` they return the day count or Unix seconds, not a
   date; the spec, like Postgres, defines them for numbers only.
+- `PERCENTILE_DISC(...) WITHIN GROUP (...) FILTER (WHERE ...)` runs.
+  The condition went to the expression `PERCENTILE_DISC` is rewritten to,
+  and ClickHouse refused it (`ifIf` does not exist); it now applies to
+  each aggregate inside.
 
 ## [0.3.0] - 2026-10-10
 
