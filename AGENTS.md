@@ -125,7 +125,8 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 - Float division by zero and single-row `STDDEV`/`VARIANCE` yield `inf` or
   `nan`, not `NULL`; the executor maps both to `None`.
 - No `TO_DATE`, `SPLIT_PART`, `CONTAINS`, `IFF`, `ZEROIFNULL` and similar;
-  each has a ClickHouse equivalent in the mapping table.
+  each has a ClickHouse equivalent in the mapping table or in SQLGlot's
+  ClickHouse generator.
 - `EXTRACT(DAYOFWEEK | DAYOFYEAR ...)` is not accepted; use `toDayOfWeek`
   and `toDayOfYear`.
 - Table names are `database.table`; Ossie `source` may have three parts,
@@ -158,19 +159,19 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   `quantileExact`, which picks one element too high whenever `p * n` is
   whole (Postgres semantics: the first value whose cumulative share
   reaches `p`).
-- ClickHouse reads `\` in a quoted name as an escape, and SQLGlot's
-  ClickHouse generator does not double it (30.21). Generate SQL with
-  `translate.CLICKHOUSE`, which does, never with `dialect="clickhouse"`.
 - Function rewrites live in `translate.py` and work on the SQLGlot AST,
   never on SQL text.
 - SQLGlot adds no parentheses for precedence, and its Python operators
   (`1 - p`) skip them when `p` is the same operator. `rewrite_tree`
   parenthesizes every operator under another operator, so a rewrite builds
-  plain nodes and an inlined field or metric needs nothing. Code that puts
+  plain nodes and an inlined field or metric needs nothing. `CONTAINS`
+  counts as an operator there: SQLGlot prints it as `POSITION(...) > 0`
+  and parenthesizes that only under a binary operator. Code that puts
   an operator under another after `rewrite_tree` parenthesizes it itself
   (`exp.and_` does for `WHERE`, `HAVING` and `ON`).
-- A rewritten function gets its spec signature in `_SIGNATURES`; `parse()`
-  rejects other argument counts, so a rewrite never drops an argument.
+- A rewritten function, ours or SQLGlot's, gets its spec signature in
+  `_SIGNATURES`; `parse()` rejects other argument counts, so a rewrite
+  never drops an argument.
 - `clickhouse-connect` does not decode the `Time` type.
 
 ## Development

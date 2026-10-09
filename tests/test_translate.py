@@ -64,6 +64,7 @@ def test_translate_uses_picked_dialect():
         # date/time
         ("CURRENT_TIME", "toTime(now())"),
         ("DAYOFYEAR(d)", "toDayOfYear(d)"),
+        ("DAYOFMONTH(d)", "toDayOfMonth(d)"),
         ("EXTRACT(DAYOFWEEK FROM d)", "toDayOfWeek(d)"),
         ("EXTRACT(DAYOFYEAR FROM d)", "toDayOfYear(d)"),
         ("TO_DATE('2024-01-15')", "toDate('2024-01-15')"),
@@ -72,10 +73,11 @@ def test_translate_uses_picked_dialect():
         ("TO_CHAR(d, 'YYYY-MM-DD HH24:MI:SS')", "formatDateTime(d, '%Y-%m-%d %H:%i:%S')"),
         # strings
         ("SPLIT_PART(s, '-', 2)", "arrayElement(splitByString('-', s), 2)"),
-        ("CONTAINS(s, 'a')", "position(s, 'a') > 0"),
-        # a rewrite that yields an operator keeps it one operand
-        ("CONTAINS(s, 'a') + 1", "(position(s, 'a') > 0) + 1"),
-        ("NOT CONTAINS(s, 'a')", "NOT (position(s, 'a') > 0)"),
+        ("CONTAINS(s, 'a')", "POSITION(s, 'a') > 0"),
+        # CONTAINS prints as an operator and stays one operand
+        ("CONTAINS(s, 'a') + 1", "(POSITION(s, 'a') > 0) + 1"),
+        ("NOT CONTAINS(s, 'a')", "NOT (POSITION(s, 'a') > 0)"),
+        ("-CONTAINS(s, 'a')", "-(POSITION(s, 'a') > 0)"),
         # every operator under another is one operand, except the left one of its kind
         ("a OR b AND c", "a OR (b AND c)"),
         ("a - b - c + d", "(a - b - c) + d"),

@@ -62,6 +62,7 @@ AGGREGATES = [
 CATALOG = [
     # --- date/time extraction
     ("YEAR(d)", DUCK), ("QUARTER(d)", DUCK), ("MONTH(d)", DUCK), ("DAY(d)", DUCK), ("DAYOFYEAR(d)", DUCK),
+    ("DAYOFMONTH(d)", DUCK),
     ("HOUR(ts)", DUCK), ("MINUTE(ts)", DUCK), ("SECOND(ts)", DUCK),
     ("EXTRACT(YEAR FROM d)", DUCK), ("EXTRACT(MONTH FROM d)", DUCK), ("EXTRACT(DAY FROM d)", DUCK),
     ("EXTRACT(WEEK FROM d)", DUCK), ("EXTRACT(DAYOFYEAR FROM d)", DUCK),
@@ -91,7 +92,7 @@ CATALOG = [
     ("SUBSTRING(s, 1, 2)", DUCK), ("REPLACE(s, 'a', 'b')", DUCK), ("SPLIT_PART(s, '-', 1)", DUCK),
     ("SPLIT_PART(s, '-', 5)", ""),  # out of range: empty string, as in Snowflake/Postgres
     ("POSITION('c' IN s)", DUCK), ("CHARINDEX('c', s)", 3), ("CONTAINS(s, 'c')", DUCK),
-    ("CONTAINS(s, 'a') = CONTAINS(s, 'c')", DUCK),
+    ("CONTAINS(s, 'a') = CONTAINS(s, 'c')", DUCK), ("NOT CONTAINS(s, 'z')", DUCK),
     ("STARTSWITH(s, 'ab')", 1), ("ENDSWITH(s, 'ab')", 0),
     ("s LIKE 'a%'", DUCK), ("s ILIKE 'A%'", DUCK), ("REGEXP_LIKE(s, 'a.*')", 1),
     ("(s LIKE 'a!%' ESCAPE '!') = 0", DUCK),
@@ -233,7 +234,7 @@ OFFSETS = [
     # a NULL or Nullable default on a non-Nullable argument
     "LAG(v, 1, NULL) OVER (ORDER BY id)",
     "LEAD(v, 1, w) OVER (ORDER BY id)",
-    # a rewritten function (CONTAINS) inside one
+    # CONTAINS, which ClickHouse lacks, inside one
     "LAST_VALUE(CONTAINS(CAST(v AS VARCHAR), '2')) OVER (ORDER BY id)",
 ]
 
@@ -246,7 +247,7 @@ def test_window_offsets(expr, clickhouse, duck):
 @pytest.mark.parametrize("expr", [c[0] for c in AGGREGATES + CATALOG + WINDOWS + OFFSETS])
 def test_rewrite_is_idempotent(expr):
     # The planner rewrites a metric, then again inside a filter that names it.
-    from ossie_clickhouse.translate import CLICKHOUSE, parse, rewrite_tree
+    from ossie_clickhouse.translate import parse, rewrite_tree
 
     once = rewrite_tree(parse(expr))
-    assert rewrite_tree(once).sql(CLICKHOUSE) == once.sql(CLICKHOUSE)
+    assert rewrite_tree(once).sql("clickhouse") == once.sql("clickhouse")
