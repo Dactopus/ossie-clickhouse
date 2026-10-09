@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-10
+
 ### Changed
 
 - Requires SQLGlot 30.22 or later. Its ClickHouse generator now doubles
@@ -18,6 +20,11 @@ a minor release may change the Python API.
 
 - `DAYOFMONTH(d)` runs: SQLGlot 30.22 translates it to `toDayOfMonth`
   instead of `DAY_OF_MONTH`, which ClickHouse does not have.
+
+### Removed
+
+- `translate.CLICKHOUSE`, the dialect that doubled `\` in quoted names.
+  Generate SQL with `dialect="clickhouse"`.
 
 ## [0.2.5] - 2026-10-06
 
