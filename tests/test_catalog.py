@@ -42,6 +42,11 @@ AGGREGATES = [
     ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)", DUCK),
     ("PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY x)", DUCK),
     ("PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY x DESC)", DUCK),
+    ("PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_CONT(0) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_CONT(1) WITHIN GROUP (ORDER BY x)", DUCK),
+    ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1)", DUCK),
+    ("MEDIAN(x) FILTER (WHERE x > 1)", DUCK), ("MEDIAN(DISTINCT x)", DUCK),
     # Discrete: the first value whose cumulative share reaches p (Postgres semantics).
     ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)", DUCK),
     ("PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY x)", DUCK),
@@ -152,6 +157,40 @@ def test_catalog(expr, expected, clickhouse, duck):
 @pytest.mark.parametrize(("expr", "expected"), AGGREGATES, ids=[c[0] for c in AGGREGATES])
 def test_aggregates(expr, expected, clickhouse, duck):
     check(expr, expected, clickhouse, duck, CH_AGG, DUCK_AGG)
+
+
+# Exact percentiles on other inputs: one row, Decimal (which quantileExactInclusive
+# rejects), and more rows than the 8192 that ClickHouse's quantile and median sample.
+PERCENTILE_BASES = {
+    "one row": ("(SELECT 2.5 AS x)", "(SELECT 2.5 AS x)"),
+    "decimal": (
+        "(SELECT toDecimal64(arrayJoin([1, 2.5, 4, 10]), 2) AS x)",
+        "(SELECT UNNEST(CAST([1, 2.5, 4, 10] AS DECIMAL(18, 2)[])) AS x)",
+    ),
+    "100k rows": (
+        "(SELECT (number * 7919) % 100003 AS x FROM numbers(100000))",
+        "(SELECT (range * 7919) % 100003 AS x FROM range(100000))",
+    ),
+}
+PERCENTILES = [
+    "MEDIAN(x)",
+    "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)",
+    "PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY x DESC)",
+]
+
+
+@pytest.mark.parametrize("base", PERCENTILE_BASES)
+@pytest.mark.parametrize("expr", PERCENTILES)
+def test_percentile_cont_is_exact(expr, base, clickhouse, duck):
+    check(expr, DUCK, clickhouse, duck, *PERCENTILE_BASES[base])
+
+
+@pytest.mark.parametrize("expr", PERCENTILES)
+def test_percentile_cont_of_nothing_is_null(expr, clickhouse):
+    # A non-Nullable argument: quantileExactInclusive alone would answer nan.
+    sql = to_clickhouse(expr)
+    base = "(SELECT arrayJoin([1, 2.5]) AS x)"
+    assert clickhouse.query(f"SELECT {sql} FROM {base} WHERE x > 100").result_rows == [(None,)]
 
 
 def test_percentile_disc_of_nothing_is_null(clickhouse):

@@ -124,11 +124,6 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 
 - Float division by zero and single-row `STDDEV`/`VARIANCE` yield `inf` or
   `nan`, not `NULL`; the executor maps both to `None`.
-- No `TO_DATE`, `SPLIT_PART`, `CONTAINS`, `IFF`, `ZEROIFNULL` and similar;
-  each has a ClickHouse equivalent in the mapping table or in SQLGlot's
-  ClickHouse generator.
-- `EXTRACT(DAYOFWEEK | DAYOFYEAR ...)` is not accepted; use `toDayOfWeek`
-  and `toDayOfYear`.
 - Table names are `database.table`; Ossie `source` may have three parts,
   or one: a bare table reads `currentDatabase()` (the URL's database, else
   the user's default), and introspection asks the server for it. Parts
@@ -139,28 +134,16 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   is reported as one. Refused: `--`, `/*`, `;` or a stray quote outside
   quotes, and `\` anywhere: ClickHouse reads it as an escape in quoted
   names, and `_parts` does not decode escapes.
-- `dictGet*` takes the dictionary's name unquoted and splits it on dots,
-  in string and identifier form alike: a dictionary whose name or
-  database has a dot is joined as a table.
-- `REGEXP_REPLACE` replaces all matches (spec reading); `DAYOFWEEK` is ISO.
+- Spec functions ClickHouse lacks or answers differently are rewritten in
+  `translate.py`, on the SQLGlot AST, never on SQL text. Why each one
+  differs is in a comment at its rewrite and in `docs/design.md`.
+- ClickHouse's short aggregate names are approximate: `quantile`,
+  `median`, `uniq`. A spec function that is exact translates to an exact
+  one; only `APPROX_*` may use them.
 - NULLs sort last in both directions, ClickHouse's default (the spec is
   silent): `NULL_ORDERING` on the parser dialect, `nulls_first=False` in
   the planner. Keep it when parsing switches to the Ossie dialect.
   `NULLS FIRST | LAST` is rejected: the spec's syntax has none.
-- An empty window frame sums to 0, not NULL, and a `RANGE` offset counts
-  NULL keys as within it. `parse()` accepts only `ROWS` frames that hold
-  the current row and `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
-- `lag`, `lead` and `nth_value` answer a missing row with the type's
-  default (0) unless the argument is Nullable, and `first_value` /
-  `last_value` skip NULLs. The spec follows ANSI (NULL, NULLs respected):
-  wrap the argument in `toNullable`, add `RESPECT NULLS`. ClickHouse
-  ignores `IGNORE NULLS` on the first three, so `parse()` rejects it.
-- `PERCENTILE_DISC` is an index into a sorted `groupArray`, not
-  `quantileExact`, which picks one element too high whenever `p * n` is
-  whole (Postgres semantics: the first value whose cumulative share
-  reaches `p`).
-- Function rewrites live in `translate.py` and work on the SQLGlot AST,
-  never on SQL text.
 - SQLGlot adds no parentheses for precedence, and its Python operators
   (`1 - p`) skip them when `p` is the same operator. `rewrite_tree`
   parenthesizes every operator under another operator, so a rewrite builds

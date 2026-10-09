@@ -47,6 +47,7 @@ _SIGNATURES = {
     "IFF": ("IFF(condition, true_result, false_result)", 3, 3),
     "ZEROIFNULL": ("ZEROIFNULL(expr)", 1, 1),
     "NULLIFZERO": ("NULLIFZERO(expr)", 1, 1),
+    "MEDIAN": ("MEDIAN(expr)", 1, 1),
     "PERCENTILE_CONT": ("PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
     "PERCENTILE_DISC": ("PERCENTILE_DISC(p) WITHIN GROUP (ORDER BY expr)", 1, 1),
     "CURRENT_TIME": ("CURRENT_TIME()", 0, 0),
@@ -247,6 +248,7 @@ def _fmt_literal(node: exp.Expression | None) -> exp.Literal:
     return exp.Literal.string(convert_format(node.this))
 
 
+# ClickHouse's EXTRACT does not accept these parts.
 _EXTRACT_PARTS = {
     "DAYOFWEEK": "toDayOfWeek",
     "DAYOFYEAR": "toDayOfYear",
@@ -272,10 +274,29 @@ _ANONYMOUS = {
 }
 
 
+def _percentile_cont(p: exp.Expression, arg: exp.Expression) -> exp.Expression:
+    """Spec PERCENTILE_CONT (Postgres semantics): exact, interpolated between the two
+    nearest values, NULL for an empty set.
+
+    ClickHouse's quantile and median keep a sample of 8192 values, so they are exact
+    only below that. quantileExactInclusive interpolates as the spec does but rejects
+    Decimal (Postgres computes in double precision too) and answers an empty set with
+    nan, which COALESCE and comparisons take for a value. OrNull makes that NULL and,
+    unlike if(COUNT(x) = 0, ...), keeps a single aggregate that FILTER can apply to.
+    """
+    if isinstance(arg, exp.Distinct):
+        arg = exp.Distinct(expressions=[_f("toFloat64", arg.expressions[0])])
+    else:
+        arg = _f("toFloat64", arg)
+    return _param_agg("quantileExactInclusiveOrNull", p, arg)
+
+
 def rewrite(node: exp.Expression) -> exp.Expression:
     if isinstance(node, exp.Anonymous):
         fn = _ANONYMOUS.get(node.name.upper())
         return fn(node.expressions) if fn else node
+    if isinstance(node, exp.Median):
+        return _percentile_cont(exp.Literal.number(0.5), node.this)
     if isinstance(node, exp.WithinGroup) and isinstance(
         node.this, exp.PercentileCont | exp.PercentileDisc
     ):
@@ -284,7 +305,7 @@ def rewrite(node: exp.Expression) -> exp.Expression:
         if isinstance(node.this, exp.PercentileCont):
             if desc:
                 p = exp.Sub(this=exp.Literal.number(1), expression=p)
-            return _param_agg("quantile", p, arg)
+            return _percentile_cont(p, arg)
         # Spec (Postgres semantics): the first value whose cumulative share reaches p,
         # so element ceil(p * n) of the sorted values (1-based, at least 1), NULL for
         # an empty set. quantileExact takes element floor(p * n) + 1: one too high

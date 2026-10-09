@@ -740,6 +740,7 @@ def test_refusal_advises_a_split_only_when_it_answers(query, hint):
         (("monthly_sales_change",), ("date_dim.d_year", "date_dim.d_moy")),
         (("revenue_at_list_price",), ("store.s_state",)),  # one value per root row
         (("sales_per_largest_staff",), ("item.i_brand",)),  # MAX ignores repeats
+        (("sales_per_median_distinct_staff",), ("item.i_brand",)),  # so does DISTINCT
         # COUNT(*) next to an aggregate that names its dataset counts that dataset's rows.
         (("average_sale",), ("store.s_state",)),
         (("bulk_sales",), ("store.s_state",)),  # FILTER reads the root
@@ -751,6 +752,8 @@ def test_allows_aggregates_that_read_root_rows(metrics, dimensions):
         revenue_at_list_price="SUM(store_sales.ss_quantity * item.i_current_price)",
         sales_per_largest_staff="SUM(store_sales.ss_ext_sales_price) / "
         "MAX(store.s_number_employees)",
+        sales_per_median_distinct_staff="SUM(store_sales.ss_ext_sales_price) / "
+        "MEDIAN(DISTINCT store.s_number_employees)",
         average_sale="SUM(store_sales.ss_ext_sales_price) / COUNT(*)",
         bulk_sales="COUNT(*) FILTER (WHERE store_sales.ss_quantity > 50)",
         staff_per_extra="SUM(store.s_number_employees) / SUM(store_extra.s_number_employees)",

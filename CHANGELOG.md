@@ -7,6 +7,19 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Fixed
+
+- `PERCENTILE_CONT` and `MEDIAN` are exact, as the spec requires. They
+  were translated to ClickHouse's `quantile` and `median`, which keep a
+  sample of 8,192 values: on larger groups the answer was approximate and
+  could change between runs (the median of 100,000 values came out 49,505
+  instead of 49,999.5). They now read every value, so memory grows with
+  the group, as it already did for `PERCENTILE_DISC`; `APPROX_PERCENTILE`
+  remains the fast approximate choice. Both return `Float64` (`Decimal`
+  before, for a `Decimal` column) and NULL for an empty set. Over a
+  `Date` or `DateTime` they return the day count or Unix seconds, not a
+  date; the spec, like Postgres, defines them for numbers only.
+
 ## [0.3.0] - 2026-10-10
 
 ### Changed
