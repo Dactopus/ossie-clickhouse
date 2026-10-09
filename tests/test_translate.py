@@ -115,6 +115,7 @@ def test_format_must_be_literal():
         # longer forms from other engines: a rewrite would drop the extra arguments
         ("REGEXP_COUNT(s, 'a', 3, 'i')", r"expected REGEXP_COUNT\(str, pattern\), got 4"),
         ("CONTAINS(s, 'a', 'x')", r"expected CONTAINS\(str, substr\), got 3"),
+        ("DAYOFYEAR(d, 1)", r"expected DAYOFYEAR\(date_expr\), got 2"),
         ("SPLIT_PART(s, ',', 1, 2)", r"expected SPLIT_PART\(str, delimiter, part\), got 4"),
         ("TO_CHAR(d, 'YYYY', 'x')", r"expected TO_CHAR\(date_expr, format\), got 3"),
         ("TO_DATE(s, 'YYYY', 'x')", r"expected TO_DATE\(string\[, format\]\), got 3"),

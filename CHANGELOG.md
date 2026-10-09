@@ -14,6 +14,11 @@ a minor release may change the Python API.
   rewrites this project carried for them are gone. Values are unchanged;
   the SQL spells `POSITION` in capitals.
 
+### Fixed
+
+- `DAYOFMONTH(d)` runs: SQLGlot 30.22 translates it to `toDayOfMonth`
+  instead of `DAY_OF_MONTH`, which ClickHouse does not have.
+
 ## [0.2.5] - 2026-10-06
 
 ### Fixed
