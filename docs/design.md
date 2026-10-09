@@ -52,6 +52,24 @@ spec differ, the test pins the spec's value with a section reference:
 cumulative share reaches `p` (ClickHouse's `quantileExact` picks one too
 high whenever `p * n` is whole).
 
+## Exact percentiles
+
+The spec's percentile functions are exact, and `APPROX_PERCENTILE` is the
+approximate one. ClickHouse names it the other way round: `quantile` and
+`median` keep a sample of 8,192 values, exact below that and approximate
+above. On ClickHouse 26.9, the median of 2,000,000 values of
+`rand64() % 1000000` came out 503,113.5 from `quantile` and 499,986.5
+from the exact function.
+
+`PERCENTILE_CONT` and `MEDIAN` are translated to
+`quantileExactInclusiveOrNull(p)(toFloat64(x))`. `quantileExactInclusive`
+interpolates between the two nearest values as Postgres does (2.5 for the
+median of 1, 2, 3, 4; `quantileExact` gives 3). It rejects `Decimal`, so
+the argument is cast to `Float64`, which is also what Postgres computes
+in. Alone it answers an empty set with `nan`; `OrNull` makes that NULL
+while keeping one aggregate, so `FILTER (WHERE ...)` still applies to it.
+Exact percentiles hold every value of the group in memory.
+
 ## NULLs sort last in both directions
 
 The spec does not define where NULLs go in `ORDER BY`, and its window

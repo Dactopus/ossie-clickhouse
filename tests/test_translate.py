@@ -32,8 +32,15 @@ def test_translate_uses_picked_dialect():
         ("DATE_PART('year', d)", "EXTRACT(YEAR FROM d)"),
         # aggregates
         ("VAR_POP(x)", "varPop(x)"),
-        ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)", "quantile(0.5)(x)"),
-        ("PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY x DESC)", "quantile(1 - 0.9)(x)"),
+        (
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)",
+            "quantileExactInclusiveOrNull(0.5)(toFloat64(x))",
+        ),
+        ("MEDIAN(x)", "quantileExactInclusiveOrNull(0.5)(toFloat64(x))"),
+        (
+            "PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY x DESC)",
+            "quantileExactInclusiveOrNull(1 - 0.9)(toFloat64(x))",
+        ),
         (
             "PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x DESC)",
             "if(COUNT(x) = 0, NULL, arrayElement(arrayReverseSort(groupArray(x)), "
@@ -41,11 +48,11 @@ def test_translate_uses_picked_dialect():
         ),
         (
             "PERCENTILE_CONT(0.2 + 0.3) WITHIN GROUP (ORDER BY x DESC)",
-            "quantile(1 - (0.2 + 0.3))(x)",
+            "quantileExactInclusiveOrNull(1 - (0.2 + 0.3))(toFloat64(x))",
         ),
         (
             "PERCENTILE_CONT(0.5 - 0.2) WITHIN GROUP (ORDER BY x DESC)",
-            "quantile(1 - (0.5 - 0.2))(x)",
+            "quantileExactInclusiveOrNull(1 - (0.5 - 0.2))(toFloat64(x))",
         ),
         ("APPROX_PERCENTILE(x, 0.5)", "quantileTDigest(0.5)(x)"),
         ("APPROX_COUNT_DISTINCT(x)", "uniq(x)"),
@@ -137,6 +144,7 @@ def test_format_must_be_literal():
         ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
         ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
         ("PERCENTILE_CONT(0.5, 1) WITHIN GROUP (ORDER BY x)", r"got 2 argument"),
+        ("MEDIAN(x, 1)", r"expected MEDIAN\(expr\), got 2 argument"),
         ("PERCENTILE_CONT(0.5)", r"expected PERCENTILE_CONT\(p\) WITHIN GROUP"),
         # too few: a clear error, not an IndexError
         ("APPROX_PERCENTILE(x)", r"got 1"),
