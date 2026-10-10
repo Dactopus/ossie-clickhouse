@@ -26,6 +26,9 @@ a minor release may change the Python API.
 - `PERCENTILE_DISC(...) WITHIN GROUP (...) OVER (...)` is rejected when
   the model is read, with a clear error; it produced SQL ClickHouse
   refused. `PERCENTILE_CONT` and `MEDIAN` with `OVER` work as before.
+- `FILTER (WHERE ...)` on an expression that is not an aggregate, such as
+  `COALESCE(SUM(x), 0) FILTER (...)`, is rejected when the model is read,
+  as the spec requires; ClickHouse refused it.
 
 ## [0.3.0] - 2026-10-10
 

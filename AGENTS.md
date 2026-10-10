@@ -136,7 +136,8 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
   names, and `_parts` does not decode escapes.
 - Spec functions ClickHouse lacks or answers differently are rewritten in
   `translate.py`, on the SQLGlot AST, never on SQL text. Why each one
-  differs is in a comment at its rewrite and in `docs/design.md`.
+  differs is in a comment at its rewrite; the larger decisions, with
+  evidence, are also in `docs/design.md`.
 - ClickHouse's short aggregate names are approximate: `quantile`,
   `median`, `uniq`. A spec function that is exact translates to an exact
   one; only `APPROX_*` may use them.
