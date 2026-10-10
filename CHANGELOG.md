@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-10
+
 ### Fixed
 
 - `PERCENTILE_CONT` and `MEDIAN` are exact, as the spec requires. They
