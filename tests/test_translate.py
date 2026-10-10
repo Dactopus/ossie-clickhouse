@@ -1,7 +1,12 @@
 import pytest
 from ossie import OssieDialect, OssieDialectExpression, OssieExpression
 
-from ossie_clickhouse.translate import convert_format, pick_expression, to_clickhouse, translate
+from dactopus_ossie_clickhouse.translate import (
+    convert_format,
+    pick_expression,
+    to_clickhouse,
+    translate,
+)
 
 
 def dialects(**kw) -> OssieExpression:

@@ -359,6 +359,48 @@ wheels = [
 ]
 
 [[package]]
+name = "dactopus-ossie-clickhouse"
+version = "0.3.1"
+source = { editable = "." }
+dependencies = [
+    { name = "apache-ossie" },
+    { name = "clickhouse-connect" },
+    { name = "pyyaml" },
+    { name = "sqlglot" },
+]
+
+[package.optional-dependencies]
+mcp = [
+    { name = "mcp" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "duckdb" },
+    { name = "mcp" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "apache-ossie", git = "https://github.com/apache/ossie.git?subdirectory=python&rev=adfa9e4" },
+    { name = "clickhouse-connect", specifier = ">=1,<2" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2,<3" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+    { name = "sqlglot", specifier = ">=30.22,<31" },
+]
+provides-extras = ["mcp"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "duckdb", specifier = ">=1.0" },
+    { name = "mcp", specifier = ">=2,<3" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
 name = "duckdb"
 version = "1.5.6"
 source = { registry = "https://pypi.org/simple" }
@@ -583,48 +625,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1f/dc/e12c1fe1ed8a7b7149777127b1a0e12ce5bd5a81d97408bedc2128c260f5/opentelemetry_api-1.45.0.tar.gz", hash = "sha256:711ede81773c8025c2c03dac0450bc89f3d30aea6eabcc815c570d4e35a963f7", size = 72115, upload-time = "2026-09-25T12:32:28.399Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/b9/040d1a1c7836922828e6480cd2366bb8fe0ebf75b413d2bb51a9b0e7f78f/opentelemetry_api-1.45.0-py3-none-any.whl", hash = "sha256:80e068aba7cd56c8b58512d6a36f8d25cb1dfaa0c0a4cc1c938ccf9f362d9cb3", size = 60020, upload-time = "2026-09-25T12:32:03.192Z" },
-]
-
-[[package]]
-name = "ossie-clickhouse"
-version = "0.3.1"
-source = { editable = "." }
-dependencies = [
-    { name = "apache-ossie" },
-    { name = "clickhouse-connect" },
-    { name = "pyyaml" },
-    { name = "sqlglot" },
-]
-
-[package.optional-dependencies]
-mcp = [
-    { name = "mcp" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "duckdb" },
-    { name = "mcp" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "apache-ossie", git = "https://github.com/apache/ossie.git?subdirectory=python&rev=adfa9e4" },
-    { name = "clickhouse-connect", specifier = ">=1,<2" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2,<3" },
-    { name = "pyyaml", specifier = ">=6,<7" },
-    { name = "sqlglot", specifier = ">=30.22,<31" },
-]
-provides-extras = ["mcp"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "duckdb", specifier = ">=1.0" },
-    { name = "mcp", specifier = ">=2,<3" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

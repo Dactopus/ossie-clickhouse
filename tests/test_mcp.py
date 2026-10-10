@@ -2,8 +2,8 @@
 
 import pytest
 
-from ossie_clickhouse import load_model
-from ossie_clickhouse.mcp_server import describe, instructions, search, summary
+from dactopus_ossie_clickhouse import load_model
+from dactopus_ossie_clickhouse.mcp_server import describe, instructions, search, summary
 from tests.test_model import FIXTURE
 
 MODEL = load_model(FIXTURE)
@@ -101,7 +101,7 @@ def anyio_backend():
 async def client(tpcds):
     from mcp import Client
 
-    from ossie_clickhouse.mcp_server import build_server
+    from dactopus_ossie_clickhouse.mcp_server import build_server
 
     async with Client(build_server(MODEL, lambda: tpcds), raise_exceptions=True) as c:
         yield c
@@ -110,15 +110,15 @@ async def client(tpcds):
 def test_server_reports_the_package_version(tpcds):
     from importlib.metadata import version
 
-    from ossie_clickhouse.mcp_server import build_server
+    from dactopus_ossie_clickhouse.mcp_server import build_server
 
-    assert build_server(MODEL, lambda: tpcds).version == version("ossie-clickhouse")
+    assert build_server(MODEL, lambda: tpcds).version == version("dactopus-ossie-clickhouse")
 
 
 def test_serve_names_the_database_on_stderr(tpcds, monkeypatch, capsys):
     from mcp.server import MCPServer
 
-    from ossie_clickhouse.cli import main
+    from dactopus_ossie_clickhouse.cli import main
 
     monkeypatch.setattr(MCPServer, "run", lambda self: None)
     assert main(["serve", str(FIXTURE), "--url", tpcds.url]) == 0
@@ -190,8 +190,8 @@ async def test_concurrent_queries_share_one_process(tpcds):
 
     from mcp import Client
 
-    from ossie_clickhouse.executor import connect
-    from ossie_clickhouse.mcp_server import build_server
+    from dactopus_ossie_clickhouse.executor import connect
+    from dactopus_ossie_clickhouse.mcp_server import build_server
 
     async with Client(build_server(MODEL, connect), raise_exceptions=True) as c:
         calls = [c.call_tool("query", {"filters": ["sleep(0.3) = 0"], "metrics": ["total_sales"]})

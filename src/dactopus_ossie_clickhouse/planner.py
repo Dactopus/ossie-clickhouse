@@ -15,8 +15,8 @@ from functools import cache
 from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
 
-from ossie_clickhouse.model import covers_key, join_problem
-from ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, untranslatable
+from dactopus_ossie_clickhouse.model import covers_key, join_problem
+from dactopus_ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, untranslatable
 
 
 class PlanError(ValueError):

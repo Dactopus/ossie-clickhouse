@@ -12,15 +12,15 @@ Install with the `[mcp]` extra (see the README), then add to
 `claude_desktop_config.json`
 ([Settings, Developer, Edit Config](https://modelcontextprotocol.io/quickstart/user)). Replace
 the placeholders: the absolute path of the command (`which
-ossie-clickhouse`; desktop apps run with a minimal `PATH`), the absolute
+dactopus-ossie-clickhouse`; desktop apps run with a minimal `PATH`), the absolute
 path of the model, and the ClickHouse URL with the credentials of the
 user the agent should act as.
 
 ```json
 {
   "mcpServers": {
-    "ossie-clickhouse": {
-      "command": "/ABSOLUTE/PATH/TO/ossie-clickhouse",
+    "dactopus-ossie-clickhouse": {
+      "command": "/ABSOLUTE/PATH/TO/dactopus-ossie-clickhouse",
       "args": ["serve", "/ABSOLUTE/PATH/TO/model.yaml"],
       "env": {"OSSIE_CLICKHOUSE_URL": "http://USER:PASSWORD@127.0.0.1:8123"}
     }
@@ -30,10 +30,10 @@ user the agent should act as.
 
 From a checkout of this repository instead, use `uv` as the command
 (absolute path, `which uv`) with the arguments
-`["run", "--directory", "/ABSOLUTE/PATH/TO/ossie-clickhouse", "ossie-clickhouse", "serve", "/ABSOLUTE/PATH/TO/model.yaml"]`.
+`["run", "--directory", "/ABSOLUTE/PATH/TO/dactopus-ossie-clickhouse", "dactopus-ossie-clickhouse", "serve", "/ABSOLUTE/PATH/TO/model.yaml"]`.
 
 Restart the app. If it reports "Server disconnected", open
-`~/Library/Logs/Claude/mcp-server-ossie-clickhouse.log`: a placeholder left
+`~/Library/Logs/Claude/mcp-server-dactopus-ossie-clickhouse.log`: a placeholder left
 in place shows up as `No such file or directory`. The server appears with
 the four tools below. Ask in business terms, for example "sales by item
 category in 1998"; the agent should call `list_model`, maybe
@@ -45,8 +45,8 @@ Any MCP client that supports stdio works the same way. For
 [Claude Code](https://docs.claude.com/en/docs/claude-code/mcp):
 
 ```bash
-claude mcp add ossie-clickhouse -e OSSIE_CLICKHOUSE_URL=http://USER:PASSWORD@127.0.0.1:8123 -- \
-  ossie-clickhouse serve /path/to/model.yaml
+claude mcp add dactopus-ossie-clickhouse -e OSSIE_CLICKHOUSE_URL=http://USER:PASSWORD@127.0.0.1:8123 -- \
+  dactopus-ossie-clickhouse serve /path/to/model.yaml
 ```
 
 ## Checking without an agent
@@ -56,7 +56,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
-  | ossie-clickhouse serve model.yaml
+  | dactopus-ossie-clickhouse serve model.yaml
 ```
 
 ## Tools

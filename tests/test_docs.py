@@ -9,10 +9,10 @@ import clickhouse_connect
 import pytest
 from sqlglot import exp
 
-from ossie_clickhouse import load_model
-from ossie_clickhouse.executor import Executor
-from ossie_clickhouse.planner import PlanError, Query
-from ossie_clickhouse.translate import parse, pick_expression
+from dactopus_ossie_clickhouse import load_model
+from dactopus_ossie_clickhouse.executor import Executor
+from dactopus_ossie_clickhouse.planner import PlanError, Query
+from dactopus_ossie_clickhouse.translate import parse, pick_expression
 from tests.conftest import FakeClickHouse
 
 ROOT = Path(__file__).parents[1]

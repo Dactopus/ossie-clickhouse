@@ -11,15 +11,15 @@ from decimal import Decimal
 import yaml
 from clickhouse_connect.driver.exceptions import ClickHouseError
 
-from ossie_clickhouse.access import Policy
-from ossie_clickhouse.executor import Executor, connect
-from ossie_clickhouse.model import ModelError, join_problems, load_model
-from ossie_clickhouse.planner import PlanError, Planner, Query, unanswerable_metrics
-from ossie_clickhouse.translate import untranslatable
+from dactopus_ossie_clickhouse.access import Policy
+from dactopus_ossie_clickhouse.executor import Executor, connect
+from dactopus_ossie_clickhouse.model import ModelError, join_problems, load_model
+from dactopus_ossie_clickhouse.planner import PlanError, Planner, Query, unanswerable_metrics
+from dactopus_ossie_clickhouse.translate import untranslatable
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="ossie-clickhouse")
+    parser = argparse.ArgumentParser(prog="dactopus-ossie-clickhouse")
     sub = parser.add_subparsers(dest="command", required=True)
     v = sub.add_parser("validate", help="check an Ossie model file")
     v.add_argument("model", help="path to a YAML or JSON Ossie model")
@@ -71,16 +71,27 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+def old_name_main(argv: list[str] | None = None) -> int:
+    """The command's name before 0.4.0, kept for 0.4.x so existing setups keep working."""
+    print(
+        "ossie-clickhouse is now dactopus-ossie-clickhouse; the old name goes away in 0.5.0",
+        file=sys.stderr,
+    )
+    return main(argv)
+
+
 def _run(args: argparse.Namespace) -> int:
     policy = Policy.load(args.policy) if getattr(args, "policy", None) else None
 
     if args.command == "serve":
-        from ossie_clickhouse.mcp_server import build_server
+        from dactopus_ossie_clickhouse.mcp_server import build_server
 
         model = load_model(args.model)
         server = build_server(model, lambda: connect(args.url), policy)
         # stderr: stdout carries the protocol.
-        print(f"ossie-clickhouse: model {model.name!r} on {server.location}", file=sys.stderr)
+        print(
+            f"dactopus-ossie-clickhouse: model {model.name!r} on {server.location}", file=sys.stderr
+        )
         server.run()  # stdio
         return 0
 

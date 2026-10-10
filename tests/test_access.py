@@ -8,10 +8,10 @@ from pathlib import Path
 import clickhouse_connect
 import pytest
 
-from ossie_clickhouse import load_model
-from ossie_clickhouse.access import Hidden, Policy, restrict
-from ossie_clickhouse.executor import Executor
-from ossie_clickhouse.planner import PlanError, Query
+from dactopus_ossie_clickhouse import load_model
+from dactopus_ossie_clickhouse.access import Hidden, Policy, restrict
+from dactopus_ossie_clickhouse.executor import Executor
+from dactopus_ossie_clickhouse.planner import PlanError, Query
 from tests.conftest import unavailable
 from tests.test_executor import FIXTURE, SETUP
 

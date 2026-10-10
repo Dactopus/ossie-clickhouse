@@ -7,6 +7,30 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed from `ossie-clickhouse` to `dactopus-ossie-clickhouse`: the
+  package, the command, the repository (`Dactopus/dactopus-ossie-clickhouse`;
+  GitHub redirects the old URLs) and the MCP server's name. Apache Ossie's
+  own converters are named `ossie-<vendor>` with a module `ossie_<vendor>`,
+  and one for ClickHouse is proposed under the old name; the two could not
+  be installed together. To migrate:
+  - uninstall `ossie-clickhouse` (`pip uninstall`, `uv tool uninstall`),
+    then install `dactopus-ossie-clickhouse`. In this order: both packages
+    install an `ossie-clickhouse` command, so `uv tool` and pipx refuse the
+    new one while the old one is installed, and uninstalling the old one
+    afterwards removes the command from the new one too;
+  - import `dactopus_ossie_clickhouse` instead of `ossie_clickhouse`;
+  - run `dactopus-ossie-clickhouse` instead of `ossie-clickhouse`. The old
+    command still works in 0.4.x, with a note on stderr, and is removed in
+    0.5.0;
+  - in an MCP client's configuration, rename the server and point it at the
+    new command (`docs/mcp-setup.md`).
+
+  `OSSIE_CLICKHOUSE_URL` keeps its name. The diagram's interactive page
+  moves to <https://dactopus.github.io/dactopus-ossie-clickhouse/>; the old
+  address does not redirect.
+
 ## [0.3.1] - 2026-10-10
 
 ### Fixed

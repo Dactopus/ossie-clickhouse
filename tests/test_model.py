@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ossie_clickhouse import ModelError, load_model
-from ossie_clickhouse.cli import main
+from dactopus_ossie_clickhouse import ModelError, load_model
+from dactopus_ossie_clickhouse.cli import main, old_name_main
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tpcds.yaml"
 
@@ -112,6 +112,18 @@ def test_cli(tmp_path, tpcds, capsys):
     assert "unsupported version" in capsys.readouterr().err
 
 
+def test_cli_answers_to_its_old_name_until_0_5_0(capsys):
+    from importlib.metadata import entry_points
+
+    scripts = {e.name: e.value for e in entry_points(group="console_scripts")}
+    assert scripts["dactopus-ossie-clickhouse"] == "dactopus_ossie_clickhouse.cli:main"
+    assert scripts["ossie-clickhouse"] == "dactopus_ossie_clickhouse.cli:old_name_main"
+    assert old_name_main(["validate", str(FIXTURE)]) == 1  # same answer as main
+    err = capsys.readouterr().err
+    assert err.startswith("ossie-clickhouse is now dactopus-ossie-clickhouse;")
+    assert "metric 'store_productivity'" in err
+
+
 def test_validate_reports_relationships_the_planner_refuses(tmp_path, tpcds, capsys):
     # The model still loads; only questions that join these datasets fail.
     item = next(d for d in tpcds["datasets"] if d["name"] == "item")
@@ -133,4 +145,4 @@ def test_cli_serve_without_mcp_extra(monkeypatch, capsys):
 
     monkeypatch.setitem(sys.modules, "mcp.server", None)  # what a bare install looks like
     assert main(["serve", str(FIXTURE)]) == 1
-    assert "pip install 'ossie-clickhouse[mcp]'" in capsys.readouterr().err
+    assert "pip install 'dactopus-ossie-clickhouse[mcp]'" in capsys.readouterr().err

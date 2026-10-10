@@ -1,6 +1,6 @@
 # Model authoring for ClickHouse
 
-A model for ossie-clickhouse is an ordinary Ossie model: the standard's
+A model for dactopus-ossie-clickhouse is an ordinary Ossie model: the standard's
 [specification](https://github.com/apache/ossie) says what goes in it, and
 nothing ClickHouse-specific is required. This page lists what the executor
 works out on its own, and the few things worth knowing when the target is
@@ -260,8 +260,8 @@ there. Write them for the reader who does not know the schema.
 ## Validation
 
 ```bash
-ossie-clickhouse validate model.yaml
-ossie-clickhouse validate model.yaml --url http://user:password@host:8123
+dactopus-ossie-clickhouse validate model.yaml
+dactopus-ossie-clickhouse validate model.yaml --url http://user:password@host:8123
 ```
 
 Without `--url`: schema, the pinned version (`0.2.0.dev0`), unique names,

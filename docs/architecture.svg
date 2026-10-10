@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" class="dm" viewBox="0 0 680 530" width="680" height="530" role="img" aria-labelledby="d-title d-desc">
-<title id="d-title">How ossie-clickhouse answers a question</title>
-<desc id="d-desc">An AI agent asks through the MCP server or the CLI. ossie-clickhouse cuts the Ossie model down to what the connected ClickHouse user may read, as system tables show, and hides more if a policy file says so. The planner and translator write one SELECT or refuse the question, and the executor runs it in ClickHouse as that user.</desc>
+<title id="d-title">How dactopus-ossie-clickhouse answers a question</title>
+<desc id="d-desc">An AI agent asks through the MCP server or the CLI. dactopus-ossie-clickhouse cuts the Ossie model down to what the connected ClickHouse user may read, as system tables show, and hides more if a policy file says so. The planner and translator write one SELECT or refuse the question, and the executor runs it in ClickHouse as that user.</desc>
 <style>
 /* Light or dark as the viewer's system says; #light or #dark after the file name forces one (the README picks by GitHub theme). */
 #light:target { color-scheme: light; }
@@ -49,7 +49,7 @@ svg.dm .cta text { fill: var(--d-accent); font-size: 13px; font-weight: 600; }
 
 <g class="purple frame">
 <rect x="210" y="20" width="240" height="406" rx="20" stroke-width="0.5"/>
-<text class="th" x="330" y="46" text-anchor="middle" dominant-baseline="central">ossie-clickhouse</text>
+<text class="th" x="330" y="46" text-anchor="middle" dominant-baseline="central">dactopus-ossie-clickhouse</text>
 </g>
 <g class="teal frame">
 <rect x="470" y="20" width="190" height="406" rx="20" stroke-width="0.5"/>

@@ -40,7 +40,7 @@ GRANT SELECT(code, name) ON shop.country TO analyst;
 CREATE ROW POLICY eu ON shop.orders FOR SELECT USING region = 'EU' TO analyst;
 ```
 
-Then run `ossie-clickhouse serve` (or `query`) with that user's URL. The
+Then run `dactopus-ossie-clickhouse serve` (or `query`) with that user's URL. The
 [MCP](https://modelcontextprotocol.io) server is one process per user; a shared multi-user server with OAuth
 is designed but not built (see [design.md](design.md)).
 
@@ -68,6 +68,6 @@ grant anything the database refuses.
 
 ## Validation runs with full rights
 
-`ossie-clickhouse validate --url` is a model owner's tool: it reports
+`dactopus-ossie-clickhouse validate --url` is a model owner's tool: it reports
 sources and columns the connected user cannot see as missing. Run it as a
 user who can read everything the model names.

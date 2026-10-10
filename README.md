@@ -1,11 +1,11 @@
-# ossie-clickhouse
+# dactopus-ossie-clickhouse
 
-[![CI](https://github.com/Dactopus/ossie-clickhouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dactopus/ossie-clickhouse/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/Dactopus/ossie-clickhouse)](https://github.com/Dactopus/ossie-clickhouse/blob/main/LICENSE)
-[![Release](https://img.shields.io/github/v/release/Dactopus/ossie-clickhouse)](https://github.com/Dactopus/ossie-clickhouse/releases)
-[![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FDactopus%2Fossie-clickhouse%2Fmain%2Fpyproject.toml)](https://github.com/Dactopus/ossie-clickhouse/blob/main/pyproject.toml)
+[![CI](https://github.com/Dactopus/dactopus-ossie-clickhouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Dactopus/dactopus-ossie-clickhouse/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Dactopus/dactopus-ossie-clickhouse)](https://github.com/Dactopus/dactopus-ossie-clickhouse/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/Dactopus/dactopus-ossie-clickhouse)](https://github.com/Dactopus/dactopus-ossie-clickhouse/releases)
+[![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FDactopus%2Fdactopus-ossie-clickhouse%2Fmain%2Fpyproject.toml)](https://github.com/Dactopus/dactopus-ossie-clickhouse/blob/main/pyproject.toml)
 <!-- On PyPI this README becomes the package page: swap the Release badge for
-     https://img.shields.io/pypi/v/ossie-clickhouse linked to the PyPI page, and
+     https://img.shields.io/pypi/v/dactopus-ossie-clickhouse linked to the PyPI page, and
      make relative links and images absolute, as the badges' are; PyPI does not
      resolve them. -->
 
@@ -23,7 +23,7 @@ things wrong: hundreds of tables with no explanations, three columns with
 the same name, a different "revenue" in every department. Apache Ossie
 fixes this at the level of description: one open, portable definition of
 what tables and fields mean, how they relate and how metrics are computed.
-ossie-clickhouse executes those descriptions on ClickHouse, which the
+dactopus-ossie-clickhouse executes those descriptions on ClickHouse, which the
 standard does not cover itself, and handles the ClickHouse specifics
 (tables that keep change history, reference data in dictionaries, join
 resolution) so that neither the model author nor the agent has to.
@@ -35,11 +35,15 @@ builds on is a git dependency until upstream publishes it, and PyPI does
 not accept packages with git dependencies.
 
 ```bash
-pip install "ossie-clickhouse[mcp] @ git+https://github.com/Dactopus/ossie-clickhouse"
+pip install "dactopus-ossie-clickhouse[mcp] @ git+https://github.com/Dactopus/dactopus-ossie-clickhouse"
 ```
 
 Leave out `[mcp]` to skip the MCP server and its SDK; the library and the
 CLI work without them.
+
+Until 0.4.0 the package and its command were `ossie-clickhouse` and the
+module `ossie_clickhouse`; the [changelog](CHANGELOG.md) says what to
+change.
 
 ## Quick start
 
@@ -51,18 +55,18 @@ ClickHouse credentials go in the URL or in `OSSIE_CLICKHOUSE_URL`
 (`.../analytics`) is where a model's sources without a database are read.
 
 ```bash
-ossie-clickhouse validate model.yaml --url http://user:password@host:8123
-ossie-clickhouse sql model.yaml -m total_sales -d item.i_brand -f "date_dim.d_year = 1998"
-ossie-clickhouse query model.yaml -m total_sales -d item.i_brand -f "total_sales > 1000000" --json
-ossie-clickhouse serve model.yaml        # MCP over stdio, see docs/mcp-setup.md
+dactopus-ossie-clickhouse validate model.yaml --url http://user:password@host:8123
+dactopus-ossie-clickhouse sql model.yaml -m total_sales -d item.i_brand -f "date_dim.d_year = 1998"
+dactopus-ossie-clickhouse query model.yaml -m total_sales -d item.i_brand -f "total_sales > 1000000" --json
+dactopus-ossie-clickhouse serve model.yaml        # MCP over stdio, see docs/mcp-setup.md
 ```
 
 From Python:
 
 ```python
-from ossie_clickhouse import load_model
-from ossie_clickhouse.executor import Executor, connect
-from ossie_clickhouse.planner import Query
+from dactopus_ossie_clickhouse import load_model
+from dactopus_ossie_clickhouse.executor import Executor, connect
+from dactopus_ossie_clickhouse.planner import Query
 
 ex = Executor(connect("http://user:password@host:8123"), load_model("model.yaml"))
 r = ex.execute(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
@@ -75,9 +79,9 @@ known object. The other modules are internal.
 
 ## How a question becomes SQL
 
-<a href="https://dactopus.github.io/ossie-clickhouse/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/architecture.svg#dark"><img src="docs/architecture.svg#light" width="680" alt="How ossie-clickhouse answers a question: an AI agent asks through the MCP server or the CLI; the Ossie model is cut down to what the connected ClickHouse user may read, as system tables show, and a policy file may hide more; the planner and translator write one SELECT or refuse; the executor runs it in ClickHouse as that user."></picture></a>
+<a href="https://dactopus.github.io/dactopus-ossie-clickhouse/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/architecture.svg#dark"><img src="docs/architecture.svg#light" width="680" alt="How dactopus-ossie-clickhouse answers a question: an AI agent asks through the MCP server or the CLI; the Ossie model is cut down to what the connected ClickHouse user may read, as system tables show, and a policy file may hide more; the planner and translator write one SELECT or refuse; the executor runs it in ClickHouse as that user."></picture></a>
 
-Click the diagram for the [interactive version](https://dactopus.github.io/ossie-clickhouse/):
+Click the diagram for the [interactive version](https://dactopus.github.io/dactopus-ossie-clickhouse/):
 one question from an agent followed to its SQL, line by line, and two
 questions it refuses.
 
@@ -171,7 +175,7 @@ Where it goes from here: PyPI once `apache-ossie` is published there; the
 upstream Ossie SQL dialect and compliance suite once they merge; multi-fact
 questions, fan-out protection for one-to-many joins, `source` as a query
 and a remote multi-user MCP server on the first real request. Ask for one
-in the [issue tracker](https://github.com/Dactopus/ossie-clickhouse/issues).
+in the [issue tracker](https://github.com/Dactopus/dactopus-ossie-clickhouse/issues).
 
 [`research/`](research/) holds the experiments behind some decisions in this
 code and the data we share with the Apache Ossie community; nothing there is

@@ -1,5 +1,5 @@
 [project]
-name = "ossie-clickhouse"
+name = "dactopus-ossie-clickhouse"
 version = "0.3.1"
 description = "Apache Ossie semantic model implementation for ClickHouse"
 readme = "README.md"
@@ -28,14 +28,15 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Dactopus/ossie-clickhouse"
-Issues = "https://github.com/Dactopus/ossie-clickhouse/issues"
+Homepage = "https://github.com/Dactopus/dactopus-ossie-clickhouse"
+Issues = "https://github.com/Dactopus/dactopus-ossie-clickhouse/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=2,<3"]
 
 [project.scripts]
-ossie-clickhouse = "ossie_clickhouse.cli:main"
+dactopus-ossie-clickhouse = "dactopus_ossie_clickhouse.cli:main"
+ossie-clickhouse = "dactopus_ossie_clickhouse.cli:old_name_main"  # until 0.5.0
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6", "duckdb>=1.0", "mcp>=2,<3"]
@@ -48,7 +49,7 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ossie_clickhouse"]
+packages = ["src/dactopus_ossie_clickhouse"]
 
 [tool.ruff]
 line-length = 100

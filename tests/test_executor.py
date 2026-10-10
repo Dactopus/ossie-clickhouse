@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from ossie_clickhouse import load_model
-from ossie_clickhouse.cli import main
-from ossie_clickhouse.executor import Executor, overrides
-from ossie_clickhouse.planner import PlanError, Query
+from dactopus_ossie_clickhouse import load_model
+from dactopus_ossie_clickhouse.cli import main
+from dactopus_ossie_clickhouse.executor import Executor, overrides
+from dactopus_ossie_clickhouse.planner import PlanError, Query
 from tests.conftest import FakeClickHouse
 
 FIXTURE = Path(__file__).parent / "fixtures" / "history.yaml"

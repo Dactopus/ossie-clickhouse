@@ -1,8 +1,8 @@
 import pytest
 
-from ossie_clickhouse import load_model
-from ossie_clickhouse.cli import main
-from ossie_clickhouse.planner import (
+from dactopus_ossie_clickhouse import load_model
+from dactopus_ossie_clickhouse.cli import main
+from dactopus_ossie_clickhouse.planner import (
     PlanError,
     Planner,
     Query,
@@ -784,7 +784,7 @@ def test_unanswerable_metrics():
 
 
 def test_unanswerable_metrics_are_hidden(tpcds):
-    from ossie_clickhouse.executor import Executor
+    from dactopus_ossie_clickhouse.executor import Executor
 
     names = [m.name for m in Executor(tpcds, MODEL).model.metrics]
     assert "store_productivity" not in names and "total_sales" in names
