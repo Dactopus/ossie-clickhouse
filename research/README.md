@@ -11,3 +11,7 @@ dependencies.
   the Ossie SQLGlot dialect from apache/ossie PR #222 against ClickHouse,
   next to SQLGlot's default and Snowflake parsers, and how many ClickHouse
   divergences come from SQLGlot's generator.
+- [2026-10-10-execute-query-profile](2026-10-10-execute-query-profile/):
+  the MCP tool against the `execute_query` profile draft of
+  apache/ossie#529 and its offline checker, and Layer 3 refusal codes and
+  answers on a model with two unrelated facts.

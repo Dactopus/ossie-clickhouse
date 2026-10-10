@@ -1,8 +1,10 @@
-"""Turn a semantic query (metrics, dimensions, filters) into one ClickHouse SELECT.
+"""Turn a semantic query (measures, dimensions, where, having) into one ClickHouse SELECT.
 
-Minimum planner: one root dataset plus direct many-to-one joins to the
-datasets the query touches. Anything else is rejected with a message that
-names the nearest supported thing.
+The query is the aggregation query of Ossie's Foundational Semantics draft
+(apache/ossie#246 §5.1.1, revision LAYER3_REVISION). Minimum planner: one root
+dataset plus direct many-to-one joins to the datasets the query touches.
+Anything else is refused with a code (Code) and a message that names the
+nearest supported thing.
 """
 
 from __future__ import annotations
@@ -10,17 +12,67 @@ from __future__ import annotations
 import difflib
 import re
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 from functools import cache
+from typing import Any
 
 from ossie import OssieDataset, OssieDocument, OssieField, OssieRelationship
 from sqlglot import exp
 
-from dactopus_ossie_clickhouse.model import covers_key, join_problem
+from dactopus_ossie_clickhouse.model import covers_key, declared_keys, join_problem
 from dactopus_ossie_clickhouse.translate import parse, pick_expression, rewrite_tree, untranslatable
+
+# The revision of apache/ossie#246 whose query shape and codes this planner follows.
+LAYER3_REVISION = "apache/ossie#246@cc0d070"
+
+
+class Code(StrEnum):
+    """Why a query is refused, for an agent to repair it by.
+
+    E_* and E3013_* are the codes of apache/ossie#246 (Appendix A). Where #246
+    has none, the common codes of the execute_query profile (apache/ossie#529):
+    INVALID_ARGUMENT for a clause value its query schema rejects,
+    QUERY_INVALID for a query that is otherwise wrong, UNSUPPORTED_QUERY for one this
+    version cannot answer, SOURCE_UNAVAILABLE for a model the connected user
+    cannot read at all, BACKEND_ERROR for ClickHouse failing a query."""
+
+    E_NAME_NOT_FOUND = "E_NAME_NOT_FOUND"
+    E_NO_PATH = "E_NO_PATH"
+    E_AMBIGUOUS_PATH = "E_AMBIGUOUS_PATH"
+    E3013_NO_STITCHING_DIMENSION = "E3013_NO_STITCHING_DIMENSION"
+    E_EMPTY_AGGREGATION_QUERY = "E_EMPTY_AGGREGATION_QUERY"
+    E_EMPTY_SCALAR_QUERY = "E_EMPTY_SCALAR_QUERY"
+    E_MIXED_QUERY_SHAPE = "E_MIXED_QUERY_SHAPE"
+    E_AGGREGATE_IN_WHERE = "E_AGGREGATE_IN_WHERE"
+    E_WINDOW_IN_WHERE = "E_WINDOW_IN_WHERE"
+    E_NON_AGGREGATE_IN_HAVING = "E_NON_AGGREGATE_IN_HAVING"
+    E_MIXED_PREDICATE_LEVEL = "E_MIXED_PREDICATE_LEVEL"
+    E_PRIMARY_KEY_REQUIRED = "E_PRIMARY_KEY_REQUIRED"
+    INVALID_ARGUMENT = "INVALID_ARGUMENT"
+    QUERY_INVALID = "QUERY_INVALID"
+    UNSUPPORTED_QUERY = "UNSUPPORTED_QUERY"
+    SOURCE_UNAVAILABLE = "SOURCE_UNAVAILABLE"
+    BACKEND_ERROR = "BACKEND_ERROR"
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    """Advice that comes with a refusal; ``kind`` as in apache/ossie#529."""
+
+    kind: str  # "name": a known name to use instead; "query": how to ask instead
+    message: str
 
 
 class PlanError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        code: Code = Code.QUERY_INVALID,
+        suggestions: tuple[Suggestion, ...] = (),
+    ):
+        super().__init__(message)
+        self.code = code
+        self.suggestions = suggestions
 
 
 _QUOTED = r"`(?:[^`]|``)+`|\"(?:[^\"]|\"\")+\""  # non-empty, a doubled quote inside
@@ -47,17 +99,159 @@ Catalog = dict[str, TableInfo]  # by dataset name
 
 
 @dataclass(frozen=True)
+class Order:
+    """An order_by entry of #246 §5.1: a selected measure or dimension and a direction."""
+
+    field: str
+    direction: str = "ASC"  # or "DESC"
+    # "FIRST" or "LAST". None is #246's default: NULL sorts as the highest value,
+    # last ascending and first descending.
+    nulls: str | None = None
+
+    @classmethod
+    def parse(cls, text: str) -> Order:
+        """The CLI's spelling: 'name', 'name desc', 'name desc nulls last'."""
+        words = text.split()
+        tail = [w.upper() for w in words[1:]]
+        direction = tail.pop(0) if tail and tail[0] in ("ASC", "DESC") else "ASC"
+        if not words or tail not in ([], ["NULLS", "FIRST"], ["NULLS", "LAST"]):
+            raise PlanError(
+                f"order_by item {text!r}: use 'name', 'name desc' or 'name desc nulls last'"
+            )
+        return cls(words[0], direction, tail[1] if tail else None)
+
+
+@dataclass(frozen=True)
 class Query:
-    metrics: tuple[str, ...] = ()
+    """An aggregation query, #246 §5.1.1."""
+
+    measures: tuple[str, ...] = ()  # metric names
     dimensions: tuple[str, ...] = ()  # "dataset.field"
-    # Ossie expressions over dataset.field (WHERE) or over metric names and
-    # aggregates (HAVING); window metrics cannot be filtered in one SELECT.
-    filters: tuple[str, ...] = ()
-    # Metric or dimension names, "name desc" for descending. Empty with metrics
-    # and dimensions: first metric descending, so callers that rank rows
-    # themselves (agents do, and get it wrong) see the top rows first.
-    order_by: tuple[str, ...] = ()
+    # Ossie predicates, each list an AND. where filters rows before aggregation:
+    # over dataset.field, no aggregate. having filters the aggregated rows: over
+    # metric names, aggregates and dimensions of the query.
+    where: tuple[str, ...] = ()
+    having: tuple[str, ...] = ()
+    # Empty with measures and dimensions: first measure descending, NULLs last,
+    # so callers that rank rows themselves (agents do, and get it wrong) see
+    # the top rows first.
+    order_by: tuple[Order, ...] = ()
     limit: int | None = None
+    fields: tuple[str, ...] = ()  # a scalar query (#246 §5.1.2): refused
+
+    def __post_init__(self):
+        for name in ("where", "having"):  # one predicate, as #246 allows, is a list of one
+            if isinstance(getattr(self, name), str):
+                object.__setattr__(self, name, (getattr(self, name),))
+
+    @classmethod
+    def from_dict(cls, obj: Any) -> Query:
+        """A query given as the Layer 3 JSON object of the execute_query profile
+        (apache/ossie#529, its query schema): #246 §5.1 with `order_by` objects.
+
+        A value the schema rejects is INVALID_ARGUMENT; a shape it rejects (both
+        fields and dimensions or measures, or neither) gets the #246 code."""
+        if not isinstance(obj, dict):
+            raise PlanError(
+                f"a query is a JSON object with {', '.join(_CLAUSES)}", Code.INVALID_ARGUMENT
+            )
+        for key in obj:
+            if key in _RENAMED:
+                hint = " or ".join(_RENAMED[key])
+                raise PlanError(
+                    f"unknown query clause {key!r}; use {hint}",
+                    Code.INVALID_ARGUMENT,
+                    tuple(Suggestion("name", n) for n in _RENAMED[key]),
+                )
+            if key not in _CLAUSES:
+                raise _not_found(
+                    f"unknown query clause {key!r}", key, _CLAUSES, Code.INVALID_ARGUMENT
+                )
+
+        def text(v: Any) -> bool:
+            return isinstance(v, str) and not v.isspace() and v != ""
+
+        def strings(key: str) -> tuple[str, ...]:
+            v = obj.get(key, [])
+            if not isinstance(v, list) or not all(text(x) for x in v):
+                raise PlanError(
+                    f"query clause {key!r} must be a list of non-blank strings",
+                    Code.INVALID_ARGUMENT,
+                )
+            return tuple(v)
+
+        def predicates(key: str) -> tuple[str, ...]:
+            v = obj.get(key, [])
+            if key in obj and text(v):
+                return (v,)
+            if not isinstance(v, list) or not all(text(x) for x in v) or (key in obj and not v):
+                raise PlanError(
+                    f"query clause {key!r} must be a non-blank string or a non-empty list "
+                    "of them (AND)",
+                    Code.INVALID_ARGUMENT,
+                )
+            return tuple(v)
+
+        order = []
+        items = obj.get("order_by", [])
+        if not isinstance(items, list) or ("order_by" in obj and not items):
+            raise PlanError(
+                'order_by must be a non-empty list of objects such as {"field": "<measure or '
+                'dimension>", "direction": "DESC"}',
+                Code.INVALID_ARGUMENT,
+            )
+        for item in items:
+            if (
+                not isinstance(item, dict)
+                or not text(item.get("field"))
+                or set(item) - {"field", "direction", "nulls"}
+                or item.get("direction", "ASC") not in ("ASC", "DESC")
+                or item.get("nulls", "LAST") not in ("FIRST", "LAST")
+            ):
+                raise PlanError(
+                    f"order_by item {item!r}: keys are field (a selected measure or dimension), "
+                    'direction ("ASC" or "DESC") and nulls ("FIRST" or "LAST")',
+                    Code.INVALID_ARGUMENT,
+                )
+            order.append(Order(item["field"], item.get("direction", "ASC"), item.get("nulls")))
+        limit = obj.get("limit")
+        if type(limit) is float and limit.is_integer():  # JSON Schema's integer: 5.0 is one
+            limit = int(limit)
+        if "limit" in obj and (type(limit) is not int or limit < 0):
+            raise PlanError(
+                f"limit must be a non-negative integer, got {limit!r}", Code.INVALID_ARGUMENT
+            )
+        q = cls(
+            strings("measures"),
+            strings("dimensions"),
+            predicates("where"),
+            predicates("having"),
+            tuple(order),
+            limit,
+            strings("fields"),
+        )
+        # The profile reads the shape from the clauses present, empty or not.
+        if "fields" in obj:
+            if mixed := [k for k in ("dimensions", "measures", "having") if k in obj]:
+                raise PlanError(
+                    f"a query has either fields (a scalar query) or {' and '.join(mixed)} "
+                    "(of an aggregation query), not both",
+                    Code.E_MIXED_QUERY_SHAPE,
+                )
+            if not q.fields:
+                raise PlanError(
+                    "a scalar query needs at least one field", Code.E_EMPTY_SCALAR_QUERY
+                )
+        elif not q.measures and not q.dimensions:
+            raise PlanError(
+                "a query needs at least one measure or dimension", Code.E_EMPTY_AGGREGATION_QUERY
+            )
+        return q
+
+
+_CLAUSES = ("dimensions", "measures", "where", "having", "order_by", "limit", "fields")
+# Clauses of the query shape before Layer 3 (0.2), which agents may still send.
+_RENAMED = {"metrics": ("measures",), "filters": ("where", "having")}
 
 
 def source_table(source: str) -> exp.Table:
@@ -84,9 +278,11 @@ def _parts(source: str) -> tuple[tuple[str, bool], ...]:
     s = source.strip()
     text = _INERT.sub(lambda m: "_" if m[1] else "", s).strip()
     if not re.search(r"[`\"]", text) and re.search(r"[\s()]", text):
-        raise PlanError(f"query sources are not supported yet: {source!r}")
+        raise PlanError(f"query sources are not supported yet: {source!r}", Code.UNSUPPORTED_QUERY)
     if "\\" in s or re.search(r"--|/\*", re.sub(_QUOTED, "_", s)) or not _SOURCE.fullmatch(s):
-        raise PlanError(f"cannot map source {source!r} to a ClickHouse table")
+        raise PlanError(
+            f"cannot map source {source!r} to a ClickHouse table", Code.UNSUPPORTED_QUERY
+        )
     return tuple(
         (p[1:-1].replace(p[0] * 2, p[0]), True) if p[0] in '`"' else (p, False)
         for p in _PART.findall(s)
@@ -212,7 +408,8 @@ def _check_rows(
             f"{root} rows (because of {', '.join(by)}): it would see only {home} "
             f"rows that {root} references{', once per reference' if repeated else ''}. "
             f"Filter or group a {home} metric only by fields of {home} or of datasets "
-            f"{home} joins to"
+            f"{home} joins to",
+            Code.UNSUPPORTED_QUERY,
         )
     if repeated:
         agg, joined = repeated[0][0].sql("clickhouse"), " and ".join(sorted(repeated[0][1]))
@@ -221,13 +418,67 @@ def _check_rows(
             f"so each {joined} row would count once per {root} row that references it. "
             f"Only {_REPEAT_SAFE_NAMES} aggregates may read a joined dataset on their own, "
             f"unless it is joined on a key of {root} (one row each); "
-            "this version cannot answer it"
+            "this version cannot answer it",
+            Code.UNSUPPORTED_QUERY,
         )
 
 
-def _suggest(name: str, options) -> str:
+def _check_level(clause: str, text: str, tree: exp.Expression, grouped: set[str]) -> None:
+    """Refuse a where or having predicate at the wrong level (#246 §6.2 step A.3, §6.3).
+
+    where takes row-level predicates; having takes aggregates (metric names
+    included) and the query's dimensions."""
+    label = f"{clause} {text!r}"
+    if tree.find(exp.Window):
+        if clause == "where":
+            raise PlanError(
+                f"{label} uses a window function, which runs after where; filter it in having",
+                Code.E_WINDOW_IN_WHERE,
+            )
+        raise PlanError(
+            f"{label} uses a window function; this version cannot filter a window metric in "
+            "the same SELECT, so select it and filter the rows instead",
+            Code.UNSUPPORTED_QUERY,
+        )
+    aggregate = tree.find(exp.AggFunc) is not None
+    row_level = []  # columns outside aggregates; in having, those that are not dimensions
+    for col in tree.find_all(exp.Column):
+        if col.find_ancestor(exp.AggFunc):
+            continue
+        node: exp.Expression | None = col
+        while clause == "having" and node is not None and node.sql() not in grouped:
+            node = node.parent
+        if clause == "where" or node is None:
+            row_level.append(col)
+    if aggregate and row_level:
+        raise PlanError(
+            f"{label} mixes an aggregate with {row_level[0].sql()}, a row-level column"
+            + (" that is not a dimension of this query" if clause == "having" else "")
+            + "; put row-level conditions in where and aggregate ones in having",
+            Code.E_MIXED_PREDICATE_LEVEL,
+        )
+    if aggregate and clause == "where":
+        raise PlanError(
+            f"{label} uses an aggregate (a metric or an aggregate function); "
+            "filter aggregated rows in having",
+            Code.E_AGGREGATE_IN_WHERE,
+        )
+    if clause == "having" and not aggregate and row_level:
+        raise PlanError(
+            f"{label} has no aggregate and reads {row_level[0].sql()}, which is not a "
+            "dimension of this query; filter rows in where",
+            Code.E_NON_AGGREGATE_IN_HAVING,
+        )
+
+
+def _not_found(message: str, name: str, options, code: Code = Code.E_NAME_NOT_FOUND) -> PlanError:
+    """A refusal for an unknown name, with the closest known names in text and as suggestions."""
     close = difflib.get_close_matches(name, list(options), n=3, cutoff=0.5)
-    return f" (did you mean: {', '.join(close)}?)" if close else ""
+    hint = f" (did you mean: {', '.join(close)}?)" if close else ""
+    return PlanError(message + hint, code, tuple(Suggestion("name", c) for c in close))
+
+
+_EXPRESSION = re.compile(r"[\s()]")  # in a name slot: an expression or an alias, not a name
 
 
 @dataclass
@@ -252,28 +503,36 @@ class Planner:
     def dataset(self, name: str) -> OssieDataset:
         ds = self._datasets.get(name.upper())
         if ds is None:
-            raise PlanError(
-                f"unknown dataset {name!r}{_suggest(name, (d.name for d in self.model.datasets))}"
-            )
+            names = (d.name for d in self.model.datasets)
+            raise _not_found(f"unknown dataset {name!r}", name, names)
         return ds
 
     def metric(self, name: str):
         m = self._metrics.get(name.upper())
         if m is None:
             names = (x.name for x in self.model.metrics or [])
-            raise PlanError(f"unknown metric {name!r}{_suggest(name, names)}")
+            raise _not_found(f"unknown metric {name!r}", name, names)
         return m
 
     def field_ref(self, ref: str) -> tuple[OssieDataset, OssieField]:
         if ref.count(".") != 1:
-            raise PlanError(f"field reference must be dataset.field, got {ref!r}")
+            names = (f"{d.name}.{x.name}" for d in self.model.datasets for x in d.fields or [])
+            raise _not_found(f"field reference must be dataset.field, got {ref!r}", ref, names)
         ds_name, f_name = ref.split(".")
         ds = self.dataset(ds_name)
         f = self._fields[ds.name.upper()].get(f_name.upper())
         if f is None:
             names = (f"{ds.name}.{x.name}" for x in ds.fields or [])
-            raise PlanError(f"unknown field {ref!r}{_suggest(ref, names)}")
+            raise _not_found(f"unknown field {ref!r}", ref, names)
         return ds, f
+
+    def _known(self, name: str) -> bool:
+        """Whether ``name`` is a metric or a dataset.field of the model."""
+        try:
+            self.field_ref(name) if "." in name else self.metric(name)
+        except PlanError:
+            return False
+        return True
 
     def resolve(self, expression: str, used: set[str], metrics: bool = False) -> exp.Expression:
         """Parse an expression, inline `dataset.field` references, qualify columns.
@@ -293,13 +552,17 @@ class Planner:
             if not node.table:
                 if metrics and node.name.upper() in self._metrics:
                     return self._metric_tree(self.metric(node.name), used)
-                hint = ""
-                if metrics:
-                    names = [x.name for x in self.model.metrics or []] + [
-                        f"{d.name}.{x.name}" for d in self.model.datasets for x in d.fields or []
-                    ]
-                    hint = f"; use dataset.field or a metric name{_suggest(node.name, names)}"
-                raise PlanError(f"unqualified column {node.name!r} in {expression!r}{hint}")
+                if not metrics:
+                    raise PlanError(f"unqualified column {node.name!r} in {expression!r}")
+                names = [x.name for x in self.model.metrics or []] + [
+                    f"{d.name}.{x.name}" for d in self.model.datasets for x in d.fields or []
+                ]
+                raise _not_found(
+                    f"unqualified column {node.name!r} in {expression!r}; "
+                    "use dataset.field or a metric name",
+                    node.name,
+                    names,
+                )
             ds, f = self.field_ref(f"{node.table}.{node.name}")
             used.add(ds.name)
             return self._field_expr(ds, f)
@@ -321,7 +584,8 @@ class Planner:
                     f"metric {m.name!r} uses {unnamed[0].sql('clickhouse')}, which reads no "
                     "column, so it would count rows of whichever dataset a question is "
                     "answered over; count a column of the dataset it means, such as "
-                    "COUNT(dataset.key)"
+                    "COUNT(dataset.key)",
+                    Code.UNSUPPORTED_QUERY,
                 )
         return tree
 
@@ -335,7 +599,8 @@ class Planner:
             if isinstance(node, exp.Column):
                 raise PlanError(
                     f"field {ds.name}.{f.name} references another dataset ({node.sql()}); "
-                    "fields may only use their own columns"
+                    "fields may only use their own columns",
+                    Code.UNSUPPORTED_QUERY,
                 )
             return node
 
@@ -352,12 +617,16 @@ class Planner:
         if len(found) > 1:  # _root chose a dataset related to every other one
             raise PlanError(
                 f"ambiguous join from {root.name!r} to {target.name!r}: relationships "
-                f"{[r.name for r in found]}; this version cannot choose between them"
+                f"{[r.name for r in found]}; this version cannot choose between them",
+                Code.E_AMBIGUOUS_PATH,
             )
         r = found[0]
         problem = join_problem(r, target)
         if problem:
-            raise PlanError(problem)
+            # Joins need the target's key: E_PRIMARY_KEY_REQUIRED by analogy with
+            # #246 §4.2, where an engine may refuse a model without primary keys.
+            code = Code.UNSUPPORTED_QUERY if declared_keys(target) else Code.E_PRIMARY_KEY_REQUIRED
+            raise PlanError(problem, code)
         return r
 
     def _one_to_one(self, root: str) -> set[str]:
@@ -373,8 +642,75 @@ class Planner:
             if len(rs) == 1 and covers_key(rs[0].from_columns, ds)
         }
 
-    def _root(self, used: set[str]) -> OssieDataset:
+    def _reachable(self, name: str, directed: bool = True) -> set[str]:
+        """Datasets ``name`` reaches through relationships, itself included; with
+        ``directed``, only from the many side to the one side."""
+        seen, todo = {name.upper()}, [name.upper()]
+        while todo:
+            at = todo.pop()
+            for r in self.model.relationships or []:
+                ends = (r.from_dataset.upper(), r.to.upper())
+                for a, b in (ends,) if directed else (ends, ends[::-1]):
+                    if a == at and b in self._datasets and b not in seen:
+                        seen.add(b)
+                        todo.append(b)
+        return {self._datasets[n].name for n in seen}
+
+    def _unjoined(self, used: set[str], touched: dict[str, set[str]]) -> PlanError:
+        """Why no used dataset joins all the others directly: no path between some
+        of them (#246 codes), or a path this version cannot plan."""
+        # A stitching dimension (#246 §6.8.2) is a dataset reachable from each fact
+        # through many-to-one relationships. Facts without one are unrelated: E3013,
+        # whether one metric reads them or two measures do (Appendix A).
+        measures = {k: d for k, d in touched.items() if k.startswith("metric ") and d}
+        for label, ds in measures.items():
+            if not set.intersection(*(self._reachable(d) for d in ds)):
+                return PlanError(
+                    f"{label} reads {' and '.join(sorted(ds))}, which share no dimension",
+                    Code.E3013_NO_STITCHING_DIMENSION,
+                )
+        reach = [set().union(*(self._reachable(d) for d in ds)) for ds in measures.values()]
+        if len(reach) > 1 and not set.intersection(*reach):
+            return PlanError(
+                f"{' and '.join(measures)} read "
+                f"{' and '.join(', '.join(sorted(d)) for d in measures.values())}, which share "
+                "no dimension: no dataset is reachable from each through many-to-one "
+                "relationships, so together they would pair every row of one with every row "
+                "of the other",
+                Code.E3013_NO_STITCHING_DIMENSION,
+            )
+        # From what the first measure reads: the rest reads as missing from it.
+        start = next((min(d) for k, d in touched.items() if k.startswith("metric ") and d), None)
+        first = self._reachable(start or min(used), directed=False)
+        if not used <= first:
+            return PlanError(
+                f"no relationship path connects {', '.join(sorted(used & first))} with "
+                f"{', '.join(sorted(used - first))}",
+                Code.E_NO_PATH,
+            )
+        for name in sorted(used):
+            if used <= self._reachable(name):
+                return PlanError(
+                    f"datasets {sorted(used)} are joined from {name!r} only through more than "
+                    "one relationship; this version joins only direct relationships from one "
+                    "dataset",
+                    Code.UNSUPPORTED_QUERY,
+                )
+        return PlanError(
+            f"no dataset among {sorted(used)} joins all the others through many-to-one "
+            "relationships, so each would have to be aggregated on its own and the results "
+            "combined; this version cannot answer it",
+            Code.UNSUPPORTED_QUERY,
+        )
+
+    def _root(self, used: set[str], touched: dict[str, set[str]]) -> OssieDataset:
         """The dataset that has direct relationships to every other used dataset."""
+        if not used:  # metrics that read no column, such as a constant
+            raise PlanError(
+                "the query reads no column of any dataset, so there are no rows to answer it "
+                "over; add a dimension or a measure that reads a column",
+                Code.UNSUPPORTED_QUERY,
+            )
         candidates = []
         for name in sorted(used):
             ds = self.dataset(name)
@@ -389,35 +725,49 @@ class Planner:
         if len(candidates) == 1:
             return candidates[0]
         if not candidates:
-            raise PlanError(
-                f"datasets {sorted(used)} are not joined by direct relationships from one root"
-            )
-        raise PlanError(f"ambiguous root dataset among {[c.name for c in candidates]}")
+            raise self._unjoined(used, touched)
+        raise PlanError(
+            f"ambiguous root dataset among {[c.name for c in candidates]}",
+            Code.UNSUPPORTED_QUERY,
+        )
 
     def _split_hint(self, q: Query) -> str:
-        """Advice to ask each metric in its own question, given only when each one plans."""
-        if len(q.metrics) < 2:
+        """Advice to ask each measure in its own question, given only when each one plans."""
+        if len(q.measures) < 2:
             return ""
         try:
-            for m in q.metrics:
-                self.plan(replace(q, metrics=(m,), order_by=(), limit=None))
+            for m in q.measures:
+                self.plan(replace(q, measures=(m,), order_by=(), limit=None))
         except PlanError:
             return ""
         if len(q.dimensions) != 1:  # one IN list cannot pick pairs of values
-            return ". Ask for each metric in its own question"
+            return "Ask for each measure in its own question"
         d = q.dimensions[0]
         return (
-            ". Ask for each metric in its own question; for the others over the rows of "
-            f'the first answer, such as its top 5, filter them with "{d} IN (...)" listing '
-            f'the values it returned, or with the single filter "{d} IN (...) OR {d} IS NULL" '
+            "Ask for each measure in its own question; for the others over the rows of "
+            f'the first answer, such as its top 5, filter them with where "{d} IN (...)" '
+            f'listing the values it returned, or with "{d} IN (...) OR {d} IS NULL" '
             "if one is NULL"
         )
 
     # --- assembly -----------------------------------------------------------
 
     def plan(self, q: Query) -> exp.Select:
-        if not q.metrics and not q.dimensions:
-            raise PlanError("a query needs at least one metric or dimension")
+        if q.fields:
+            if q.measures or q.dimensions:
+                raise PlanError(
+                    "a query has either fields (a scalar query) or dimensions and measures "
+                    "(an aggregation query), not both",
+                    Code.E_MIXED_QUERY_SHAPE,
+                )
+            raise PlanError(
+                "scalar queries (fields) are not supported yet; ask for dimensions and measures",
+                Code.UNSUPPORTED_QUERY,
+            )
+        if not q.measures and not q.dimensions:
+            raise PlanError(
+                "a query needs at least one measure or dimension", Code.E_EMPTY_AGGREGATION_QUERY
+            )
         # Query item ("metric 'x'") -> datasets it reads: picks the root, explains it.
         touched: dict[str, set[str]] = {}
         checked: list[tuple[str, Inputs]] = []  # aggregate expressions
@@ -429,19 +779,32 @@ class Planner:
             if name.upper() in seen_aliases:
                 raise PlanError(
                     f"two selected columns named {name!r}: a metric and a dimension, or "
-                    "fields of two datasets, cannot share a name in one query"
+                    "fields of two datasets, cannot share a name in one query",
+                    Code.UNSUPPORTED_QUERY,
                 )
             seen_aliases.add(name.upper())
             return name
 
         for ref in q.dimensions:
+            if _EXPRESSION.search(ref) and not self._known(ref):
+                raise PlanError(
+                    f"dimension {ref!r}: dimensions are dataset.field names; aliases and "
+                    "expressions are not supported yet",
+                    Code.UNSUPPORTED_QUERY,
+                )
             ds, f = self.field_ref(ref)
             touched.setdefault(f"dimension {ref!r}", set()).add(ds.name)
             e = rewrite_tree(self._field_expr(ds, f))
             selects.append(e.as_(alias(f.name)))
             group.append(e.copy())
 
-        for name in q.metrics:
+        for name in q.measures:
+            if not re.fullmatch(r"\w+", name) and name.upper() not in self._metrics:
+                raise PlanError(
+                    f"measure {name!r}: measures are metric names; ad-hoc aggregates and "
+                    "window expressions are not supported yet, so ask for a metric of the model",
+                    Code.UNSUPPORTED_QUERY,
+                )
             m = self.metric(name)
             label = f"metric {m.name!r}"
             tree = self._metric_tree(m, touched.setdefault(label, set()))
@@ -449,45 +812,35 @@ class Planner:
             selects.append(tree.as_(alias(m.name)))
 
         where: list[exp.Expression] = []
-        having: list[exp.Expression] = []  # filters over aggregates or metric names
+        having: list[exp.Expression] = []
         # Every part is rewritten once, before inspecting: APPROX_PERCENTILE is a
         # plain function name to SQLGlot and an aggregate only after rewrite.
         grouped = {e.sql() for e in group}
-        for f in q.filters:
-            label = f"filter {f!r}"
-            tree = self.resolve(f, touched.setdefault(label, set()), metrics=True)
-            tree = rewrite_tree(tree)
-            if tree.find(exp.Window):
-                raise PlanError(
-                    f"filter {f!r} uses a window function; a window metric cannot be "
-                    "filtered in the same SELECT, select it and filter the rows instead"
-                )
-            if not tree.find(exp.AggFunc):
-                where.append(tree)
-                continue
-            # HAVING may only see aggregates and GROUP BY expressions.
-            for col in tree.find_all(exp.Column):
-                if col.find_ancestor(exp.AggFunc):
-                    continue
-                node: exp.Expression | None = col
-                while node is not None and node.sql() not in grouped:
-                    node = node.parent
-                if node is None:
-                    raise PlanError(
-                        f"filter {f!r} mixes an aggregate with {col.sql()}, which is not a "
-                        "dimension of this query; add it to dimensions or put it in its own filter"
-                    )
-            having.append(tree)
-            checked.append((label, _aggregate_inputs(tree)))
+        for clause, items in (("where", q.where), ("having", q.having)):
+            for f in items:
+                label = f"{clause} {f!r}"
+                tree = self.resolve(f, touched.setdefault(label, set()), metrics=True)
+                tree = rewrite_tree(tree)
+                _check_level(clause, f, tree, grouped)
+                if clause == "where":
+                    where.append(tree)
+                else:
+                    having.append(tree)
+                    checked.append((label, _aggregate_inputs(tree)))
 
         used = set().union(*touched.values())
         try:
-            root = self._root(used)
+            root = self._root(used, touched)
             one_to_one = self._one_to_one(root.name)
             for label, inputs in checked:
                 _check_rows(label, inputs, root.name, touched, one_to_one)
         except PlanError as e:
-            raise PlanError(f"{e}{self._split_hint(q)}") from None
+            hint = self._split_hint(q)
+            if not hint:
+                raise
+            raise PlanError(
+                f"{e}. {hint}", e.code, (*e.suggestions, Suggestion("query", hint))
+            ) from None
         sel = exp.select(*selects).from_(self._table(root))
         dict_keys: dict[str, exp.Expression] = {}  # dictionary dataset -> key expression
         for name in sorted(used - {root.name}):
@@ -517,7 +870,9 @@ class Planner:
             sel = sel.group_by(*group)
         if having:
             sel = sel.having(exp.and_(*having))
-        order_by = q.order_by or ((f"{q.metrics[0]} desc",) if q.metrics and group else ())
+        order_by = q.order_by
+        if not order_by and q.measures and group:
+            order_by = (Order(q.measures[0], "DESC", "LAST"),)
         if order_by:
             sel = sel.order_by(*self._order(order_by, q, selects))
         if q.limit is not None:
@@ -531,25 +886,38 @@ class Planner:
         return sel
 
     def _order(
-        self, order_by: tuple[str, ...], q: Query, selects: list[exp.Expression]
+        self, order_by: tuple[Order, ...], q: Query, selects: list[exp.Expression]
     ) -> list[exp.Expression]:
-        """ORDER BY over selected aliases; names are metrics, dataset.field, or field names."""
+        """ORDER BY over selected aliases; names are metrics, dataset.field, or field names.
+
+        NULL placement follows #246 §5.1: unless an entry says otherwise, NULL
+        sorts as the highest value, last ascending and first descending."""
         aliases = {e.alias.upper(): e.alias for e in selects}
         for ref in q.dimensions:  # allow the dataset.field spelling too
             aliases[ref.upper()] = self.field_ref(ref)[1].name
         out = []
         for item in order_by:
-            name, _, direction = item.partition(" ")
-            desc = direction.strip().upper() == "DESC"
-            if direction and not desc and direction.strip().upper() != "ASC":
-                raise PlanError(f"order_by item {item!r}: use 'name', 'name asc' or 'name desc'")
-            alias = aliases.get(name.upper())
-            if alias is None:
+            direction, nulls = item.direction.upper(), (item.nulls or "").upper()
+            if direction not in ("ASC", "DESC") or nulls not in ("", "FIRST", "LAST"):
                 raise PlanError(
-                    f"order_by {name!r} is not a selected metric or dimension"
-                    f"{_suggest(name, dict.fromkeys(aliases.values()))}"
+                    f"order_by {item.field!r}: direction is ASC or DESC, nulls FIRST or LAST"
                 )
-            out.append(exp.Ordered(this=exp.column(alias), desc=desc, nulls_first=False))
+            alias = aliases.get(item.field.upper())
+            if alias is None:
+                if _EXPRESSION.search(item.field) or self._known(item.field):
+                    raise PlanError(
+                        f"order_by {item.field!r}: this version orders only by names of the "
+                        "measures and dimensions the query selects; select it to order by it",
+                        Code.UNSUPPORTED_QUERY,
+                    )
+                raise _not_found(
+                    f"order_by {item.field!r} is not a selected measure or dimension",
+                    item.field,
+                    dict.fromkeys(aliases.values()),
+                )
+            desc = direction == "DESC"
+            nulls_first = nulls == "FIRST" if nulls else desc
+            out.append(exp.Ordered(this=exp.column(alias), desc=desc, nulls_first=nulls_first))
         return out
 
     def _table(self, ds: OssieDataset) -> exp.Expression:

@@ -1,0 +1,17 @@
+[
+ {"name": "A1 two unrelated facts, no dimension", "query": {"measures": ["orders", "sessions"]}},
+ {"name": "A2 dimension of an unrelated dataset", "query": {"measures": ["orders"], "dimensions": ["sessions.country"]}},
+ {"name": "A3 filter on an unrelated dataset", "query": {"measures": ["orders"], "where": "sessions.country = 'France'"}},
+ {"name": "A4 two unrelated facts by a dimension of one", "query": {"measures": ["orders", "sessions"], "dimensions": ["orders.channel"]}},
+ {"name": "B1 two facts stitched by orders", "query": {"measures": ["items_sold", "refunds_total"], "dimensions": ["orders.channel"]}},
+ {"name": "B2 order measure with a line measure", "query": {"measures": ["revenue", "items_sold"], "dimensions": ["orders.channel"]}},
+ {"name": "B3 web facts stitched by sessions", "query": {"measures": ["web_revenue", "page_views"], "dimensions": ["sessions.source"], "limit": 5}},
+ {"name": "B4 two facts stitched, no dimension", "query": {"measures": ["items_sold", "refunds_total"]}},
+ {"name": "C1 having on a root metric", "query": {"measures": ["revenue"], "dimensions": ["orders.shipping_country"], "having": "revenue > 100"}},
+ {"name": "C2 having on a joined-root metric", "query": {"measures": ["items_sold"], "dimensions": ["orders.channel"], "having": "items_sold >= 3"}},
+ {"name": "C3 having over a field outside the query", "query": {"measures": ["revenue"], "dimensions": ["orders.channel"], "having": "orders.currency = 'USD'"}},
+ {"name": "C4 aggregate in where", "query": {"measures": ["revenue"], "dimensions": ["orders.channel"], "where": "revenue > 100"}},
+ {"name": "C5 having over a query dimension and a metric", "query": {"measures": ["revenue"], "dimensions": ["orders.channel"], "having": ["orders.channel <> 'pos'", "revenue > 0"]}},
+ {"name": "C6 mixed levels in one predicate", "query": {"measures": ["revenue"], "dimensions": ["orders.channel"], "having": "revenue > 100 OR orders.total > 0"}},
+ {"name": "C7 having over a metric not selected", "query": {"measures": ["revenue"], "dimensions": ["orders.channel"], "having": "orders > 2"}}
+]

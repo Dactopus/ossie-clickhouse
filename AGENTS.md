@@ -8,8 +8,8 @@ dactopus-ossie-clickhouse is an open-source implementation of the
 [Apache Ossie](https://github.com/apache/ossie) semantic model standard for
 ClickHouse. It reads an Ossie data description, translates metric definitions
 into ClickHouse SQL, answers questions posed in business terms (metrics,
-dimensions, filters), and serves the description and queries to AI agents over
-MCP. See [README.md](README.md) for the full product description.
+dimensions, conditions), and serves the description and queries to AI agents
+over MCP. See [README.md](README.md) for the full product description.
 
 Licensed under Apache 2.0.
 
@@ -65,13 +65,19 @@ Python library with a CLI entry point. The parts that constrain code:
 
 ## Architecture rules
 
-- Layering: model loader -> translator -> planner -> executor -> MCP adapter.
-  Lower layers never import higher ones.
+- Layering: model loader -> translator -> planner -> executor ->
+  `execute_query` (the profile) -> MCP adapter. Lower layers never import
+  higher ones.
 - The MCP server (`mcp_server.py`, `[mcp]` extra) is a thin adapter over
   the library. No logic lives only in the MCP layer; each tool is one
-  library call, and errors go back as results with an `error` field, never
-  as exceptions, so suggestions reach the agent. Keep `client_factory` as
-  the only place that decides which ClickHouse connection a caller gets.
+  library call. `execute_query` follows the profile draft apache/ossie#529
+  (`PROFILE_REVISION`): its schemas, copied unchanged into `schemas/`, are
+  the tool's `inputSchema` and `outputSchema`; `execute_query.call` makes
+  the whole reply, rows as embedded CSV. A refused query goes back as a
+  tool error (`isError`, `structuredContent.error.code`, `suggestions`),
+  never as an exception, so suggestions reach the agent. Keep
+  `client_factory` as the only place that decides which ClickHouse
+  connection a caller gets.
 - Access control is ClickHouse's. Queries run as the connected user; the
   model is trimmed (`access.py`) to the sources and columns that user can
   read, as revealed by `system.tables` and `system.columns`. A hidden object
@@ -105,7 +111,17 @@ Python library with a CLI entry point. The parts that constrain code:
   one dataset (`docs/design.md`).
 - Name resolution is case-insensitive (spec rule); emitted SQL uses physical
   names exactly as the model writes them (ClickHouse is case-sensitive).
-- Planner errors name the nearest known object; agents recover from that.
+- The query is the aggregation query of apache/ossie#246 §5.1.1
+  (`LAYER3_REVISION`, an open draft): `measures`, `dimensions`, `where`,
+  `having`, `order_by`, `limit`, as #529's query schema writes it.
+  `Query.from_dict` accepts exactly what that schema accepts. Follow the
+  drafts, not an own variant; when one changes, update the shape, the
+  schemas and the revision together.
+- Every `PlanError` carries a `Code`: #246's where its trigger matches,
+  otherwise #529's common codes (`INVALID_ARGUMENT`, `QUERY_INVALID`,
+  `UNSUPPORTED_QUERY`).
+  Never invent an `E_*` code. Planner errors name the nearest known
+  object, in the text and as `suggestions`; agents recover from that.
 
 ## Testing
 
@@ -141,10 +157,13 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 - ClickHouse's short aggregate names are approximate: `quantile`,
   `median`, `uniq`. A spec function that is exact translates to an exact
   one; only `APPROX_*` may use them.
-- NULLs sort last in both directions, ClickHouse's default (the spec is
-  silent): `NULL_ORDERING` on the parser dialect, `nulls_first=False` in
-  the planner. Keep it when parsing switches to the Ossie dialect.
-  `NULLS FIRST | LAST` is rejected: the spec's syntax has none.
+- In expressions (window `ORDER BY`), NULLs sort last in both directions,
+  ClickHouse's default (the spec is silent): `NULL_ORDERING` on the parser
+  dialect. Keep it when parsing switches to the Ossie dialect. `NULLS
+  FIRST | LAST` in an expression is rejected: the spec's syntax has none.
+  A query's explicit `order_by` follows #246 (NULL highest: last ascending,
+  first descending); the default order is the first measure descending,
+  NULLs last.
 - SQLGlot adds no parentheses for precedence, and its Python operators
   (`1 - p`) skip them when `p` is the same operator. `rewrite_tree`
   parenthesizes every operator under another operator, so a rewrite builds

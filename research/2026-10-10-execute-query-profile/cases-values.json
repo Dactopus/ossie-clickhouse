@@ -1,0 +1,14 @@
+[
+ {"name": "edge values", "query": {"dimensions": ["cells.k", "cells.s", "cells.d", "cells.t", "cells.t2", "cells.f", "cells.b", "cells.n", "cells.u", "cells.arr"], "measures": ["rows", "f_total"], "where": "cells.k < 7", "order_by": [{"field": "cells.k"}]}},
+ {"name": "truncated without limit", "query": {"dimensions": ["cells.k"], "measures": ["rows"]}},
+ {"name": "query limit over the ceiling", "query": {"dimensions": ["cells.k"], "measures": ["rows"], "limit": 120}},
+ {"name": "zero rows after a filter", "query": {"dimensions": ["cells.s"], "measures": ["rows"], "where": "cells.s = 'nothing'"}},
+ {"name": "zero rows, limit 0", "query": {"measures": ["f_total"], "limit": 0}},
+ {"name": "COUNT(*) alone over one dataset", "query": {"measures": ["rows"]}},
+ {"name": "missing data_source_id", "arguments": {"query": {"measures": ["rows"]}}},
+ {"name": "unknown data_source_id", "arguments": {"data_source_id": "cells", "query": {"measures": ["rows"]}}},
+ {"name": "extra argument", "arguments": {"data_source_id": "$SOURCE", "query": {"measures": ["rows"]}, "limit": 1}},
+ {"name": "query as a JSON string", "arguments": {"data_source_id": "$SOURCE", "query": "{\"measures\": [\"rows\"]}"}},
+ {"name": "lowercase direction", "query": {"measures": ["rows"], "order_by": [{"field": "rows", "direction": "desc"}]}},
+ {"name": "empty where list", "query": {"measures": ["rows"], "where": []}}
+]

@@ -11,9 +11,9 @@
 
 An implementation of the [Apache Ossie](https://github.com/apache/ossie)
 semantic model standard for [ClickHouse](https://clickhouse.com/docs). It reads an Ossie description of
-your data, answers questions asked in business terms (metrics, dimensions,
-filters) with one ClickHouse query, and serves the description and the
-queries to AI agents over [MCP](https://modelcontextprotocol.io), the
+your data, answers questions asked in business terms (metrics by
+dimensions, with conditions) with one ClickHouse query, and serves the
+description and the queries to AI agents over [MCP](https://modelcontextprotocol.io), the
 Model Context Protocol.
 
 ## Why
@@ -56,8 +56,8 @@ ClickHouse credentials go in the URL or in `OSSIE_CLICKHOUSE_URL`
 
 ```bash
 dactopus-ossie-clickhouse validate model.yaml --url http://user:password@host:8123
-dactopus-ossie-clickhouse sql model.yaml -m total_sales -d item.i_brand -f "date_dim.d_year = 1998"
-dactopus-ossie-clickhouse query model.yaml -m total_sales -d item.i_brand -f "total_sales > 1000000" --json
+dactopus-ossie-clickhouse sql model.yaml -m total_sales -d item.i_brand -w "date_dim.d_year = 1998"
+dactopus-ossie-clickhouse query model.yaml -m total_sales -d item.i_brand --having "total_sales > 1000000" --json
 dactopus-ossie-clickhouse serve model.yaml        # MCP over stdio, see docs/mcp-setup.md
 ```
 
@@ -69,13 +69,40 @@ from dactopus_ossie_clickhouse.executor import Executor, connect
 from dactopus_ossie_clickhouse.planner import Query
 
 ex = Executor(connect("http://user:password@host:8123"), load_model("model.yaml"))
-r = ex.execute(Query(metrics=("total_sales",), dimensions=("item.i_brand",)))
+r = ex.execute(Query(measures=("total_sales",), dimensions=("item.i_brand",)))
 print(r.sql, r.columns, r.rows[:3])
 ```
 
 That is the Python API: `load_model`, `executor.connect`,
-`executor.Executor` and `planner.Query`; a `PlanError` names the nearest
-known object. The other modules are internal.
+`executor.Executor`, `planner.Query` and `planner.Order`; a `PlanError`
+carries a `code` and `suggestions` and names the nearest known object. The
+other modules are internal.
+
+## The query
+
+A question is the aggregation query of Ossie's Layer 3 draft,
+[apache/ossie#246](https://github.com/apache/ossie/pull/246) §5.1.1
+(revision `cc0d070`, not yet merged): `measures` (metric names),
+`dimensions` (`dataset.field`), `where`, `having`, `order_by`, `limit`.
+Over MCP it is one JSON object, passed to the tool `execute_query` of the
+`execute_query` profile draft
+[apache/ossie#529](https://github.com/apache/ossie/pull/529) (`0.4-draft`)
+with the model's `data_source_id`; the rows come back as CSV:
+
+```json
+{"measures": ["total_sales"], "dimensions": ["item.i_brand"],
+ "where": "date_dim.d_year = 1998", "having": "total_sales > 1000000",
+ "order_by": [{"field": "total_sales", "direction": "DESC"}], "limit": 10}
+```
+
+A refused question carries a code: #246's where one applies
+(`E_NAME_NOT_FOUND`, `E_NO_PATH`, `E_AGGREGATE_IN_WHERE` and others),
+otherwise one of the profile's common codes (`INVALID_ARGUMENT`,
+`QUERY_INVALID`, `UNSUPPORTED_QUERY`, `SOURCE_UNAVAILABLE`,
+`BACKEND_ERROR`). Not supported
+yet, refused with `UNSUPPORTED_QUERY`: scalar queries (`fields`), ad-hoc
+aggregates in `measures`, and the questions #246 answers by aggregating
+facts separately and combining them.
 
 ## How a question becomes SQL
 
@@ -91,13 +118,14 @@ questions it refuses.
   target (many-to-one). `SETTINGS`
   [`join_use_nulls = 1`](https://clickhouse.com/docs/operations/settings/settings#join_use_nulls)
   so unmatched rows get NULL, not ClickHouse defaults.
-- Filters over fields go to `WHERE`; filters that name a metric or contain
-  an aggregate (`total_sales > 1000000`) go to `HAVING`, and may only use
-  the question's own dimensions besides aggregates. A window metric
-  (`RANK() OVER ...`) cannot be filtered: select it and filter the rows.
-  A filter is one expression, never a statement, and its functions reach
-  ClickHouse as written: what a caller may run there is decided by
-  ClickHouse grants and quotas, not by this library.
+- `where` conditions over fields become `WHERE`; `having` conditions over
+  metric names, aggregates (`total_sales > 1000000`) and the question's
+  own dimensions become `HAVING`. A condition in the wrong clause is
+  refused with #246's code. A window metric (`RANK() OVER ...`) cannot be
+  filtered: select it and filter the rows. A condition is one expression,
+  never a statement, and its functions reach ClickHouse as written: what a
+  caller may run there is decided by ClickHouse grants and quotas, not by
+  this library.
 - Tables with a [`ReplacingMergeTree`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
   engine, replicated or on ClickHouse Cloud, and `Distributed` tables,
   materialized views and `Merge` tables over them, are read with [`FINAL`](https://clickhouse.com/docs/sql-reference/statements/select/from#final-modifier);
@@ -108,13 +136,16 @@ questions it refuses.
   [SQLGlot](https://github.com/tobymao/sqlglot) AST; the spec's function
   catalog is mapped to ClickHouse equivalents and checked by value against
   [DuckDB](https://duckdb.org) and the spec text.
-- Rows come sorted by the first metric, descending, unless `order_by` says
-  otherwise, so the top rows come first and nobody has to rank them by hand.
-  Rows without a value (NULL) come last in either direction.
+- Rows come sorted by the first metric, descending, with rows without a
+  value (NULL) last, unless `order_by` says otherwise, so the top rows come
+  first and nobody has to rank them by hand. An explicit `order_by`
+  follows #246: NULL sorts as the highest value, first descending, unless
+  the entry's `nulls` says `LAST` (a key of this project: #246 gives the
+  object form none).
 - Names resolve case-insensitively; SQL uses the physical names as the
   model writes them. The same question and model always give the same SQL.
-- Errors name the nearest known metric, field or dataset, so an agent can
-  recover from a typo without help.
+- Refusals name the nearest known metric, field or dataset, in the text
+  and as suggestions, so an agent can recover from a typo without help.
 
 ## CLI
 
@@ -126,8 +157,9 @@ questions it refuses.
 | `serve <model>` | MCP server over stdio (needs the `[mcp]` extra). |
 
 Question options for `sql` and `query`: `-m metric` (repeatable),
-`-d dataset.field` (repeatable), `-f condition` (repeatable; a metric
-name or an aggregate means `HAVING`), `-o "name [desc]"`, `-l limit`.
+`-d dataset.field` (repeatable), `-w condition` and `--having condition`
+(repeatable), `-o "name [desc] [nulls first|last]"` (repeatable),
+`-l limit`. A refusal prints its code: `error: E_NAME_NOT_FOUND: ...`.
 `--url` and `--policy` apply to anything that talks to ClickHouse.
 
 ## Documentation

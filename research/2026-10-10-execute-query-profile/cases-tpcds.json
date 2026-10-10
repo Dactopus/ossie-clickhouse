@@ -1,0 +1,11 @@
+[
+ {"name": "success: top brands", "query": {"measures": ["total_sales"], "dimensions": ["item.i_brand"], "order_by": [{"field": "total_sales", "direction": "DESC"}], "limit": 3}},
+ {"name": "success: total, no limit", "query": {"measures": ["total_sales"]}},
+ {"name": "E_NAME_NOT_FOUND", "query": {"measures": ["total_salez"]}},
+ {"name": "empty aggregation", "query": {}},
+ {"name": "empty scalar", "query": {"fields": []}},
+ {"name": "mixed shape with empty dimensions", "query": {"fields": ["item.i_brand"], "dimensions": []}},
+ {"name": "scalar", "query": {"fields": ["item.i_brand"]}},
+ {"name": "malformed limit", "query": {"measures": ["total_sales"], "limit": "5"}},
+ {"name": "backend error", "query": {"measures": ["total_sales"], "where": "item.i_brand + 1 > 0"}}
+]

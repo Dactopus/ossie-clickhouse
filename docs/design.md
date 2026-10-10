@@ -78,7 +78,7 @@ number that is not a date. `PERCENTILE_DISC` takes any sortable type and
 returns a date for dates. The translator does not know column types, so
 the refusal comes when the query runs, not from `validate`.
 
-## NULLs sort last in both directions
+## NULLs sort last in both directions, except in an explicit `order_by`
 
 The spec does not define where NULLs go in `ORDER BY`, and its window
 syntax (`ORDER BY order_expr [ASC|DESC]`) has no `NULLS FIRST | LAST` for
@@ -92,14 +92,27 @@ and the planner matched it, so a running total ordered by a key with NULLs
 started from their sum: on TPC-DS, with `LEFT JOIN`s, the 129,850 sales
 without a matching date came first in `cumulative_sales`.
 
-Chosen: NULLs last both ways. It is ClickHouse's default, so the generated
-SQL carries no `NULLS` clause, and it agrees with DuckDB, the reference
-engine in tests, so no expected value needs pinning. For a query's
-`order_by` it also keeps rows without a value at the end of a top-N list
-in either direction. The parser dialect sets `NULL_ORDERING`; the Ossie
-dialect from apache/ossie PR #222 inherits SQLGlot's default, so switching
-to it must keep the setting. An explicit `NULLS FIRST | LAST` is rejected,
-as the spec's syntax has none. Reopen if the spec defines NULL ordering.
+Chosen for expressions (window `ORDER BY` in fields and metrics): NULLs
+last both ways. It is ClickHouse's default, so the generated SQL carries
+no `NULLS` clause, and it agrees with DuckDB, the reference engine in
+tests, so no expected value needs pinning. The parser dialect sets
+`NULL_ORDERING`; the Ossie dialect from apache/ossie PR #222 inherits
+SQLGlot's default, so switching to it must keep the setting. An explicit
+`NULLS FIRST | LAST` in an expression is rejected, as the spec's syntax
+has none.
+
+A query's own `order_by` follows the Layer 3 draft, apache/ossie#246 §5.1
+(`cc0d070`), which answers apache/ossie#498 for queries: NULL sorts as the
+highest value, last ascending and first descending, Postgres's and
+Snowflake's default, and an entry may say `nulls` explicitly. The planner
+emits `NULLS FIRST` where ClickHouse's default differs, so the row order
+is the same on any engine. Without an `order_by` the planner still sorts
+by the first measure descending with NULLs last: #246 leaves the order of
+such a query to the engine, and an explicit `NULLS LAST` keeps rows
+without a value at the end of a top-N list. #246 applies its rule inside
+`OVER (...)` too; windows keep NULLs last until the spec settles it, so
+the two disagree there. Reopen when #246 or the expression language
+merges.
 
 NaN is not NULL and engines disagree on it too: ClickHouse puts NaN after
 the values and before NULLs in both directions; DuckDB and Postgres treat
@@ -188,9 +201,10 @@ The planner refuses both after it picks the root, on the rewritten tree
 Only columns inside an aggregate's argument or its `FILTER (WHERE ...)`
 count. A window function reads
 grouped rows, and its `PARTITION BY` and `ORDER BY` columns are grouping
-keys. The check covers selected metrics and aggregate filters, including
-metrics named in a filter. The error names what made the root (a metric,
-a dimension or a filter) so an agent can split the question.
+keys. The check covers selected metrics and `having` conditions,
+including metrics named in one. The error names what made the root (a
+metric, a dimension, a `where` or `having` condition) so an agent can
+split the question.
 
 The cost: a correct question is refused when its intended population is
 the root's references, such as distinct users per purchased item through
@@ -206,6 +220,58 @@ A metric that refuses in every question (a repeat-sensitive aggregate over
 each of two datasets, a bare `COUNT(*)`, an unknown field) is hidden from
 agents like an untranslatable one, since every attempt would cost a turn,
 and is reported by `validate`.
+
+## Query shape and refusal codes from the Layer 3 drafts
+
+The query is the aggregation query of apache/ossie#246 §5.1.1 at
+`cc0d070`, an open draft of Ossie's Layer 3, and the MCP tool takes it as
+one JSON object. Taken before it merges so the shape is tried on a working
+executor and the findings go back to the draft (dev@ossie, thread
+"Proposal: an MCP server for Ossie", 2026-10-07). The tool is that of the
+`execute_query` profile draft, apache/ossie#529 `0.4-draft` at `b5418ee`,
+which binds the #246 object to MCP; its schemas are published unchanged
+and its offline checker passes on captured replies. The binding, named by
+`list_model`, carries both revisions. If a draft changes, the shape
+follows it.
+
+Refusals carry #246's code where its trigger matches the planner's
+reason, and a common code of the `execute_query` draft (apache/ossie#529)
+otherwise: `INVALID_ARGUMENT` for a value its query schema rejects,
+`QUERY_INVALID`, `UNSUPPORTED_QUERY`, `SOURCE_UNAVAILABLE`,
+`BACKEND_ERROR`. No codes of this project's own: an agent repairs a query
+the same way on any engine only if the codes are shared. The planner's
+"no direct join from one root" splits by #246's cases. Facts that share
+no stitching dimension (no dataset reachable from each through many-to-one
+relationships, §6.8.2), read by one metric or by two measures, are
+`E3013_NO_STITCHING_DIMENSION`, as Appendix A words it ("two unrelated
+facts referenced together"): the question pairs every row of one with
+every row of the other on any engine, so the agent should ask it
+differently. Datasets of a measure and its dimensions or conditions with
+no relationship path between them are `E_NO_PATH`. A path the planner
+cannot follow (several hops, or facts sharing a dimension that would be
+aggregated separately and combined, #246 §6.6 and §6.8.2) is
+`UNSUPPORTED_QUERY`, not `E_NO_PATH` or E3013, which would tell the agent
+the question is wrong when only this engine cannot answer it.
+`E_PRIMARY_KEY_REQUIRED` stays for a join to a dataset with no declared
+key: #246 §4.2 lets an engine require primary keys, so it is not a
+planner gap passed off as an invalid question.
+
+The profile's reply is followed whole. Rows go out as embedded CSV, the
+profile's own encoding (NULL is an unquoted `\N`, a string starting with
+a backslash gets one more), not ClickHouse's CSV output, which quotes the
+string `\N` instead and so differs from the profile. Types come from
+the ClickHouse column type; a `DateTime` is an instant, so it is
+`DateTimeTz`. `data_source_id` is the model name and a hash of the whole
+model: the profile forbids reusing an id for another revision, and an
+agent holding an old one is refused with `SOURCE_UNAVAILABLE` and the
+current id as a suggestion. Without a `limit`, 100 rows return and the
+reply says `truncated` if there were more (one more row is asked for to
+tell); a query's own `limit` is its meaning, so that answer is
+`complete`.
+The preview in `structuredContent` holds the first 10 rows, the profile's
+economical default: Claude Code shows an agent both the CSV and
+`structuredContent` (measured 2026-10-10), so a full preview would make
+it read every row twice.
 
 ## Remote MCP server, designed, not built
 

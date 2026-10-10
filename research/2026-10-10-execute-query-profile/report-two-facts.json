@@ -1,0 +1,14 @@
+{
+  "profile": "0.4-draft",
+  "scope": "captured MCP endpoint contract",
+  "status": "passed",
+  "cases_checked": 15,
+  "findings": [],
+  "unverified": [],
+  "unchecked": [
+    "query expression/name/path/grain semantics and cross-engine answers",
+    "authorization, read-only enforcement and absence of hidden execution",
+    "live transport, discovery, Tasks lifecycle and deployment limits",
+    "Markdown meaning and optional binary file format fidelity"
+  ]
+}
