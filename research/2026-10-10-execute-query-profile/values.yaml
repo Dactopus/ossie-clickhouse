@@ -1,0 +1,20 @@
+version: 0.2.0.dev0
+name: profile_values
+datasets:
+  - name: cells
+    source: ossie_profile.cells
+    primary_key: [k]
+    fields:
+      - {name: k, expression: {dialects: [{dialect: ANSI_SQL, expression: k}]}}
+      - {name: s, expression: {dialects: [{dialect: ANSI_SQL, expression: s}]}}
+      - {name: d, expression: {dialects: [{dialect: ANSI_SQL, expression: d}]}}
+      - {name: t, expression: {dialects: [{dialect: ANSI_SQL, expression: t}]}}
+      - {name: t2, expression: {dialects: [{dialect: ANSI_SQL, expression: t2}]}}
+      - {name: f, expression: {dialects: [{dialect: ANSI_SQL, expression: f}]}}
+      - {name: b, expression: {dialects: [{dialect: ANSI_SQL, expression: b}]}}
+      - {name: n, expression: {dialects: [{dialect: ANSI_SQL, expression: n}]}}
+      - {name: u, expression: {dialects: [{dialect: ANSI_SQL, expression: u}]}}
+      - {name: arr, expression: {dialects: [{dialect: ANSI_SQL, expression: arr}]}}
+metrics:
+  - {name: rows, expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(*)}]}}
+  - {name: f_total, expression: {dialects: [{dialect: ANSI_SQL, expression: SUM(cells.f)}]}}
