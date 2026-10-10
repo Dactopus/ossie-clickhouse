@@ -96,12 +96,13 @@ at `b5418ee`; its `inputSchema` and `outputSchema` are the profile's. The
 
 An answer's `structuredContent` holds `contract_version`, `status`,
 `data_source_id`, `model` (`id`, `revision`), `preview` (columns with
-their logical type, and up to 100 rows: exact numbers as strings, dates in
-ISO 8601), `result` (`row_count`, `completeness`, the CSV resource, and
-the SQL under `extensions["io.github.dactopus/clickhouse"]`),
-`diagnostics`, `suggestions` and `filter_value_alternatives` (always
-empty: filter values are not looked up). In the CSV, NULL is an unquoted
-`\N` and a string that starts with a backslash gets one more.
+their logical type, and the first 10 rows: exact numbers as strings,
+dates in ISO 8601; all rows are in the CSV), `result` (`row_count`,
+`completeness`, the CSV resource, and the SQL under
+`extensions["io.github.dactopus/clickhouse"]`), `diagnostics`,
+`suggestions` and `filter_value_alternatives` (always empty: filter
+values are not looked up). In the CSV, NULL is an unquoted `\N` and a
+string that starts with a backslash gets one more.
 
 `error.code` is #246's code where one applies (`E_NAME_NOT_FOUND`,
 `E_NO_PATH`, `E_AMBIGUOUS_PATH`, `E3013_NO_STITCHING_DIMENSION`,
