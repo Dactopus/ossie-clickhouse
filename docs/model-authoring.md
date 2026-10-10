@@ -111,6 +111,14 @@ float division by zero and a one-row `STDDEV` come back as NULL, not
 `inf` or `nan`.
 Subqueries and statements inside an expression are rejected.
 
+`PERCENTILE_CONT` and `MEDIAN` are exact, as the spec requires, and hold
+every value of the group in memory; `APPROX_PERCENTILE` is the fast
+approximate choice for large groups. Like the spec, they accept numbers
+only: over a `Date`, `DateTime` or `String` column ClickHouse refuses the
+query, and `validate` does not catch it. For a median date, write
+`PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY ...)`, which returns one of
+the values. `PERCENTILE_DISC` cannot take `OVER`.
+
 Window functions over aggregates (`RANK() OVER (...)`, `LAG(SUM(x))`)
 pass through in the same `SELECT`; their `PARTITION BY` and `ORDER BY`
 columns are grouping keys and may come from any joined dataset. The spec cannot say which grain a
