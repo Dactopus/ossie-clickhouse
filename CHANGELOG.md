@@ -7,6 +7,8 @@ a minor release may change the Python API.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-10
+
 ### Changed
 
 - Renamed from `ossie-clickhouse` to `dactopus-ossie-clickhouse`: the
