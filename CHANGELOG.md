@@ -17,8 +17,9 @@ a minor release may change the Python API.
   the group, as it already did for `PERCENTILE_DISC`; `APPROX_PERCENTILE`
   remains the fast approximate choice. Both return `Float64` (`Decimal`
   before, for a `Decimal` column) and NULL for an empty set. Over a
-  `Date` or `DateTime` they return the day count or Unix seconds, not a
-  date; the spec, like Postgres, defines them for numbers only.
+  `Date`, `DateTime` or `String` column ClickHouse now refuses the
+  query: the spec, like Postgres, defines them for numbers only. For a
+  median date, use `PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY ...)`.
 - `PERCENTILE_DISC(...) WITHIN GROUP (...) FILTER (WHERE ...)` runs.
   The condition went to the expression `PERCENTILE_DISC` is rewritten to,
   and ClickHouse refused it (`ifIf` does not exist); it now applies to

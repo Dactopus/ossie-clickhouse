@@ -34,12 +34,13 @@ def test_translate_uses_picked_dialect():
         ("VAR_POP(x)", "varPop(x)"),
         (
             "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x)",
-            "quantileExactInclusiveOrNull(0.5)(toFloat64(x))",
+            "quantileExactInclusiveOrNull(0.5)(x * 1.0)",
         ),
-        ("MEDIAN(x)", "quantileExactInclusiveOrNull(0.5)(toFloat64(x))"),
+        ("MEDIAN(x)", "quantileExactInclusiveOrNull(0.5)(x * 1.0)"),
+        ("MEDIAN(x - y)", "quantileExactInclusiveOrNull(0.5)((x - y) * 1.0)"),
         (
             "PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY x DESC)",
-            "quantileExactInclusiveOrNull(1 - 0.9)(toFloat64(x))",
+            "quantileExactInclusiveOrNull(1 - 0.9)(x * 1.0)",
         ),
         (
             "PERCENTILE_DISC(0.9) WITHIN GROUP (ORDER BY x DESC)",
@@ -56,15 +57,15 @@ def test_translate_uses_picked_dialect():
         ("uniqExact(x) FILTER (WHERE x > 1)", "uniqExact(x) FILTER(WHERE x > 1)"),
         (
             "PERCENTILE_CONT(0.2 + 0.3) WITHIN GROUP (ORDER BY x DESC)",
-            "quantileExactInclusiveOrNull(1 - (0.2 + 0.3))(toFloat64(x))",
+            "quantileExactInclusiveOrNull(1 - (0.2 + 0.3))(x * 1.0)",
         ),
         (
             "PERCENTILE_CONT(0.5 - 0.2) WITHIN GROUP (ORDER BY x DESC)",
-            "quantileExactInclusiveOrNull(1 - (0.5 - 0.2))(toFloat64(x))",
+            "quantileExactInclusiveOrNull(1 - (0.5 - 0.2))(x * 1.0)",
         ),
         (
             "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) OVER (PARTITION BY y)",
-            "quantileExactInclusiveOrNull(0.5)(toFloat64(x)) OVER (PARTITION BY y)",
+            "quantileExactInclusiveOrNull(0.5)(x * 1.0) OVER (PARTITION BY y)",
         ),
         ("APPROX_PERCENTILE(x, 0.5)", "quantileTDigest(0.5)(x)"),
         ("APPROX_COUNT_DISTINCT(x)", "uniq(x)"),

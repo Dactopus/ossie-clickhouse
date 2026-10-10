@@ -197,6 +197,28 @@ def test_percentile_cont_of_nothing_is_null(expr, clickhouse):
     assert clickhouse.query(f"SELECT {sql} FROM {base} WHERE x > 100").result_rows == [(None,)]
 
 
+@pytest.mark.parametrize(
+    "base",
+    [
+        "(SELECT toDate('2026-01-01') + number AS x FROM numbers(4))",
+        "(SELECT toDateTime('2026-01-01 00:00:00') + number AS x FROM numbers(4))",
+        "(SELECT toString(number) AS x FROM numbers(4))",
+    ],
+)
+@pytest.mark.parametrize("expr", PERCENTILES)
+def test_percentile_cont_refuses_non_numbers(expr, base, clickhouse):
+    # Postgres defines PERCENTILE_CONT for numbers only; ClickHouse would answer a
+    # date with its day count. PERCENTILE_DISC takes any sortable type.
+    with pytest.raises(Exception, match="Illegal types"):
+        clickhouse.query(f"SELECT {to_clickhouse(expr)} FROM {base}")
+
+
+def test_percentile_disc_of_dates_is_a_date(clickhouse):
+    sql = to_clickhouse("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)")
+    base = "(SELECT toDate('2026-01-01') + number AS x FROM numbers(4))"
+    assert clickhouse.query(f"SELECT {sql} FROM {base}").result_rows == [(D(2026, 1, 2),)]
+
+
 def test_percentile_disc_of_nothing_is_null(clickhouse):
     sql = to_clickhouse("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x)")
     assert clickhouse.query(f"SELECT {sql} FROM {CH_AGG} WHERE x > 100").result_rows == [(None,)]

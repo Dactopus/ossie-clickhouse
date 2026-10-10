@@ -299,11 +299,19 @@ def _percentile_cont(p: exp.Expression, arg: exp.Expression) -> exp.Expression:
     Decimal (Postgres computes in double precision too) and answers an empty set with
     nan, which COALESCE and comparisons take for a value. OrNull makes that NULL and,
     unlike if(COUNT(x) = 0, ...), keeps a single aggregate that FILTER can apply to.
+
+    x * 1.0 makes the argument Float64. Unlike toFloat64, ClickHouse refuses it for a
+    Date, DateTime or String, which Postgres refuses too; quantileExactInclusive
+    alone would answer a date with its day count and toFloat64 would parse a string.
     """
+
+    def to_float(x: exp.Expression) -> exp.Expression:
+        return exp.Mul(this=x, expression=exp.Literal.number("1.0"))
+
     if isinstance(arg, exp.Distinct):
-        arg = exp.Distinct(expressions=[_f("toFloat64", arg.expressions[0])])
+        arg = exp.Distinct(expressions=[to_float(arg.expressions[0])])
     else:
-        arg = _f("toFloat64", arg)
+        arg = to_float(arg)
     return _param_agg("quantileExactInclusiveOrNull", p, arg)
 
 
