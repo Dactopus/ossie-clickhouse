@@ -23,6 +23,10 @@ a minor release may change the Python API.
   The condition went to the expression `PERCENTILE_DISC` is rewritten to,
   and ClickHouse refused it (`ifIf` does not exist); it now applies to
   each aggregate inside.
+- `PERCENTILE_CONT` and `PERCENTILE_DISC` with `OVER (...)` are
+  rejected when the model is read, as in Postgres. `PERCENTILE_DISC`
+  produced SQL ClickHouse refused; `PERCENTILE_CONT` ran, but outside the
+  spec. `MEDIAN(...) OVER (...)` still works.
 
 ## [0.3.0] - 2026-10-10
 

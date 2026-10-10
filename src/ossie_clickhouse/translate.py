@@ -187,6 +187,13 @@ def _shape_problem(node: exp.Expression) -> str | None:
         keys = len(node.parent.expression.expressions)
         if keys != 1:
             return f"expected {signature}, got {keys} ORDER BY keys"
+        # Postgres has no window form of ordered-set aggregates; the PERCENTILE_DISC
+        # rewrite (several aggregates) could not take OVER anyway.
+        outer = node.parent.parent
+        if isinstance(outer, exp.Filter):
+            outer = outer.parent
+        if isinstance(outer, exp.Window):
+            return f"{node.sql_name()} cannot take OVER"
     # The signature check counts DISTINCT x, y as one argument.
     if isinstance(node, exp.Median) and isinstance(node.this, exp.Distinct):
         if (n := len(node.this.expressions)) != 1:
