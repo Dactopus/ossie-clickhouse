@@ -187,6 +187,10 @@ def _shape_problem(node: exp.Expression) -> str | None:
         keys = len(node.parent.expression.expressions)
         if keys != 1:
             return f"expected {signature}, got {keys} ORDER BY keys"
+    # The signature check counts DISTINCT x, y as one argument.
+    if isinstance(node, exp.Median) and isinstance(node.this, exp.Distinct):
+        if (n := len(node.this.expressions)) != 1:
+            return f"expected MEDIAN(expr), got {n} argument(s)"
     if isinstance(node, exp.Extract) and node.name.upper() not in _DATE_PARTS:
         return f"{node.name} is not a date part; expected one of " + ", ".join(sorted(_DATE_PARTS))
     if isinstance(node, exp.WindowSpec):
@@ -330,9 +334,13 @@ def rewrite(node: exp.Expression) -> exp.Expression:
         )
     # FILTER applies to one aggregate, and ClickHouse reads it as the -If combinator.
     # A rewrite above turned the aggregate under it into an expression of several
-    # (PERCENTILE_DISC), so each of them takes the condition.
+    # (PERCENTILE_DISC), so each of them takes the condition. An aggregate SQLGlot does
+    # not know (Anonymous) holds none and keeps its FILTER.
     if isinstance(node, exp.Filter) and not isinstance(node.this, exp.AggFunc):
-        for agg in list(node.this.find_all(exp.AggFunc)):
+        aggs = list(node.this.find_all(exp.AggFunc))
+        if not aggs:
+            return node
+        for agg in aggs:
             agg.replace(exp.Filter(this=agg.copy(), expression=node.expression.copy()))
         return node.this
     if isinstance(node, exp.CurrentTime):

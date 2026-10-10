@@ -52,6 +52,8 @@ def test_translate_uses_picked_dialect():
             "FILTER(WHERE x > 1)), toUInt64(GREATEST(CEIL(0.5 * COUNT(x) FILTER(WHERE x > 1)), "
             "1))))",
         ),
+        # An aggregate SQLGlot does not know keeps its FILTER.
+        ("uniqExact(x) FILTER (WHERE x > 1)", "uniqExact(x) FILTER(WHERE x > 1)"),
         (
             "PERCENTILE_CONT(0.2 + 0.3) WITHIN GROUP (ORDER BY x DESC)",
             "quantileExactInclusiveOrNull(1 - (0.2 + 0.3))(toFloat64(x))",
@@ -151,6 +153,7 @@ def test_format_must_be_literal():
         ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x, y)", r"got 2 ORDER BY keys"),
         ("PERCENTILE_CONT(0.5, 1) WITHIN GROUP (ORDER BY x)", r"got 2 argument"),
         ("MEDIAN(x, 1)", r"expected MEDIAN\(expr\), got 2 argument"),
+        ("MEDIAN(DISTINCT x, y)", r"expected MEDIAN\(expr\), got 2 argument"),
         ("PERCENTILE_CONT(0.5)", r"expected PERCENTILE_CONT\(p\) WITHIN GROUP"),
         # too few: a clear error, not an IndexError
         ("APPROX_PERCENTILE(x)", r"got 1"),
