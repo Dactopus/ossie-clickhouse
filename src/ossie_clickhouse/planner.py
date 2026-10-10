@@ -118,7 +118,7 @@ Inputs = list[tuple[exp.AggFunc, set[str]]]
 def _repeat_safe(agg: exp.AggFunc) -> bool:
     # A parametric aggregate, name(p)(args), keeps its arguments in params:
     # MEDIAN(DISTINCT x) is rewritten to one.
-    args = agg.args.get("params") or [] if isinstance(agg, exp.ParameterizedAgg) else [agg.this]
+    args = (agg.args.get("params") or []) if isinstance(agg, exp.ParameterizedAgg) else [agg.this]
     return isinstance(agg, tuple(_REPEAT_SAFE)) or any(isinstance(a, exp.Distinct) for a in args)
 
 
