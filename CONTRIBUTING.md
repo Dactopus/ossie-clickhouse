@@ -9,7 +9,7 @@ messages, issues.
 The failure mode this project guards against is SQL that runs and returns
 the wrong value. If you see one, open an issue with the model (or the part
 of it involved), the question (metrics, dimensions, filters), the SQL from
-`ossie-clickhouse sql`, and what the value should be, with the spec section
+`dactopus-ossie-clickhouse sql`, and what the value should be, with the spec section
 or the hand-written query that says so.
 
 ## Setup
@@ -17,8 +17,8 @@ or the hand-written query that says so.
 Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/Dactopus/ossie-clickhouse
-cd ossie-clickhouse
+git clone https://github.com/Dactopus/dactopus-ossie-clickhouse
+cd dactopus-ossie-clickhouse
 uv sync
 uv run pytest -m "not integration"     # unit tests, no server needed
 ```
@@ -96,13 +96,13 @@ pull request:
 
 | Path | What |
 | --- | --- |
-| `src/ossie_clickhouse/model.py` | Load and validate a model on top of `apache-ossie`. |
-| `src/ossie_clickhouse/translate.py` | Ossie expression to ClickHouse SQL, on the [SQLGlot](https://github.com/tobymao/sqlglot) AST. |
-| `src/ossie_clickhouse/planner.py` | Question to one `SELECT`. |
-| `src/ossie_clickhouse/executor.py` | Introspection, execution, result cleanup. |
-| `src/ossie_clickhouse/access.py` | Trim the model to the caller's rights; policy file. |
-| `src/ossie_clickhouse/mcp_server.py` | [MCP](https://modelcontextprotocol.io) tools, behind the `[mcp]` extra. |
-| `src/ossie_clickhouse/cli.py` | `ossie-clickhouse` command. |
+| `src/dactopus_ossie_clickhouse/model.py` | Load and validate a model on top of `apache-ossie`. |
+| `src/dactopus_ossie_clickhouse/translate.py` | Ossie expression to ClickHouse SQL, on the [SQLGlot](https://github.com/tobymao/sqlglot) AST. |
+| `src/dactopus_ossie_clickhouse/planner.py` | Question to one `SELECT`. |
+| `src/dactopus_ossie_clickhouse/executor.py` | Introspection, execution, result cleanup. |
+| `src/dactopus_ossie_clickhouse/access.py` | Trim the model to the caller's rights; policy file. |
+| `src/dactopus_ossie_clickhouse/mcp_server.py` | [MCP](https://modelcontextprotocol.io) tools, behind the `[mcp]` extra. |
+| `src/dactopus_ossie_clickhouse/cli.py` | `dactopus-ossie-clickhouse` command. |
 | `tests/` | pytest; fixtures in `tests/fixtures/`. |
 | `research/` | Studies behind decisions, with data shared with Apache Ossie; not part of the package. |
 
@@ -136,6 +136,6 @@ SQLGlot release and drops the rewrites that release made redundant
 
 ```bash
 git switch main && git pull --ff-only
-git tag -a vX.Y.Z -m "ossie-clickhouse X.Y.Z" && git push origin vX.Y.Z
+git tag -a vX.Y.Z -m "dactopus-ossie-clickhouse X.Y.Z" && git push origin vX.Y.Z
 gh release create vX.Y.Z --title X.Y.Z --notes-file notes.md
 ```

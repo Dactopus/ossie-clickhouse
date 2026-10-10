@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## Project
 
-ossie-clickhouse is an open-source implementation of the
+dactopus-ossie-clickhouse is an open-source implementation of the
 [Apache Ossie](https://github.com/apache/ossie) semantic model standard for
 ClickHouse. It reads an Ossie data description, translates metric definitions
 into ClickHouse SQL, answers questions posed in business terms (metrics,
@@ -160,7 +160,7 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 
 ## Development
 
-Python 3.11+, managed with uv. Layout: `src/ossie_clickhouse/` (library and
+Python 3.11+, managed with uv. Layout: `src/dactopus_ossie_clickhouse/` (library and
 CLI), `tests/` (pytest, fixtures in `tests/fixtures/`), `docs/`, `research/`
 (studies behind decisions and data for Apache Ossie; never imported by the
 library or tests, linted with the rest).
@@ -171,11 +171,11 @@ uv run pytest                 # tests; ClickHouse-dependent ones skip when no se
 uv run pytest -m "not integration"   # unit tests only
 uv run ruff check src tests research   # lint
 uv run ruff format src tests research  # format
-uv run ossie-clickhouse validate tests/fixtures/tpcds.yaml [--url http://127.0.0.1:8123]
-uv run ossie-clickhouse sql tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand
-uv run ossie-clickhouse query tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand --json
-uv run ossie-clickhouse query model.yaml -m revenue --url http://analyst:secret@host:8123 --policy policy.yaml
-uv run ossie-clickhouse serve tests/fixtures/tpcds.yaml   # MCP over stdio
+uv run dactopus-ossie-clickhouse validate tests/fixtures/tpcds.yaml [--url http://127.0.0.1:8123]
+uv run dactopus-ossie-clickhouse sql tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand
+uv run dactopus-ossie-clickhouse query tests/fixtures/tpcds.yaml -m total_sales -d item.i_brand --json
+uv run dactopus-ossie-clickhouse query model.yaml -m revenue --url http://analyst:secret@host:8123 --policy policy.yaml
+uv run dactopus-ossie-clickhouse serve tests/fixtures/tpcds.yaml   # MCP over stdio
 ```
 
 Access-control tests create users and need SQL access management on the

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ossie-clickhouse: how a question becomes SQL</title>
-<meta name="description" content="How ossie-clickhouse turns an AI agent's question into one ClickHouse query: what it reads from the Ossie model and from ClickHouse, and why it refuses some questions.">
+<title>dactopus-ossie-clickhouse: how a question becomes SQL</title>
+<meta name="description" content="How dactopus-ossie-clickhouse turns an AI agent's question into one ClickHouse query: what it reads from the Ossie model and from ClickHouse, and why it refuses some questions.">
 <style>
 :root {
   --bg: #ffffff; --text: #2c2c2a; --muted: #5f5e5a; --border: #d3d1c7; --surface: #f1efe8; --accent: #534ab7; --mark: #eeedfe;
@@ -45,8 +45,8 @@ footer { margin-top: 24px; font-size: 14px; color: var(--muted); }
 </head>
 <body>
 <main>
-<h1>ossie-clickhouse: how a question becomes SQL</h1>
-<p class="lead">An AI agent asks for metrics and dimensions by name; ossie-clickhouse answers with one ClickHouse query, or explains why it will not. Select a box, or follow one question from the agent to its answer.</p>
+<h1>dactopus-ossie-clickhouse: how a question becomes SQL</h1>
+<p class="lead">An AI agent asks for metrics and dimensions by name; dactopus-ossie-clickhouse answers with one ClickHouse query, or explains why it will not. Select a box, or follow one question from the agent to its answer.</p>
 
 <div id="diagram"></div>
 
@@ -82,13 +82,13 @@ ORDER BY
   revenue DESC
 SETTINGS join_use_nulls = 1</pre>
 
-<footer>Source: <a href="https://github.com/Dactopus/ossie-clickhouse">github.com/Dactopus/ossie-clickhouse</a>. The model is <a href="https://github.com/Dactopus/dactopus-data-models">web_analytics from dactopus-data-models</a>, copied to <code>tests/fixtures/web_analytics.yaml</code>. <code>tests/test_docs.py</code> checks that the SQL, the lines each step marks and the two refusals are what ossie-clickhouse writes today; the figures in step 6 are checked only where the GA4 sample is loaded into a local ClickHouse. The diagram is <code>docs/architecture.svg</code>, also shown in the README; change it in the pull request that changes what it shows.</footer>
+<footer>Source: <a href="https://github.com/Dactopus/dactopus-ossie-clickhouse">github.com/Dactopus/dactopus-ossie-clickhouse</a>. The model is <a href="https://github.com/Dactopus/dactopus-data-models">web_analytics from dactopus-data-models</a>, copied to <code>tests/fixtures/web_analytics.yaml</code>. <code>tests/test_docs.py</code> checks that the SQL, the lines each step marks and the two refusals are what dactopus-ossie-clickhouse writes today; the figures in step 6 are checked only where the GA4 sample is loaded into a local ClickHouse. The diagram is <code>docs/architecture.svg</code>, also shown in the README; change it in the pull request that changes what it shows.</footer>
 </main>
 
 <script>
 const INFO = {
   agent: ["AI agent", "Claude or any MCP client. It picks metrics and dimensions by name and never writes SQL; the model's descriptions and ai_context tell it which to pick.", ""],
-  model: ["Ossie model", "Your description of the data: datasets, fields, relationships and metrics. Any Ossie model works; this page uses web_analytics from dactopus-data-models.", "ossie-clickhouse serve model.yaml"],
+  model: ["Ossie model", "Your description of the data: datasets, fields, relationships and metrics. Any Ossie model works; this page uses web_analytics from dactopus-data-models.", "dactopus-ossie-clickhouse serve model.yaml"],
   policy: ["Policy file", "Optional. Hides datasets, fields or metrics from chosen ClickHouse users or roles. It only hides: what ClickHouse does not let a user read stays hidden whatever the file says.", "--policy policy.yaml"],
   mcp: ["MCP server and CLI", "Thin layers over the library: list_model, search_model, describe_object and query over MCP; validate, sql, query and serve on the command line. Errors go back to the agent as results that name the nearest known object.", "MCP needs the [mcp] extra"],
   trim: ["Access trim", "Removes from the model every dataset, field, relationship and metric the user cannot read, and those whose expression does not translate. A hidden object never appears in SQL, errors or suggestions.", ""],
@@ -100,7 +100,7 @@ const INFO = {
 // [boxes, text, monospace line, starts of the SQL lines to mark]; JSON, so tests/test_docs.py can read it
 const STEPS = [
   [["agent", "mcp"], "An agent is asked which traffic brought revenue from the United States, month by month. list_model shows revenue, purchases and the model's note to break revenue down by currency. The agent calls query with metrics revenue and purchases, dimensions purchases.purchase_month, sessions.source_medium and purchases.currency, and one filter.", "sessions.country = 'United States'", []],
-  [["sys", "trim"], "Connected as the URL's user, ossie-clickhouse reads the system tables. This user can read purchases and sessions in the database dactopus. dactopus-data-models rewrites changed rows in place, so both are plain MergeTree and no FINAL is needed. Anything the user cannot read leaves the model before planning.", "", []],
+  [["sys", "trim"], "Connected as the URL's user, dactopus-ossie-clickhouse reads the system tables. This user can read purchases and sessions in the database dactopus. dactopus-data-models rewrites changed rows in place, so both are plain MergeTree and no FINAL is needed. Anything the user cannot read leaves the model before planning.", "", []],
   [["plan", "model"], "purchases is the root: both metrics count its rows. sessions joins along the model's relationship purchases_to_sessions, on session_key, the key of sessions, so each purchase meets at most one session. join_use_nulls keeps a purchase without a session as NULL, not as an empty string.", "", ["FROM", "LEFT JOIN", "  ON ", "SETTINGS"]],
   [["plan"], "Each dimension and metric becomes a column of the SELECT, and the dimensions are repeated in GROUP BY: one row per month, source / medium and currency. Expressions come from the model and are translated: DATE_TRUNC('month', purchase_date) becomes ClickHouse's dateTrunc('MONTH', ...); the || concatenation and the SUM and COUNT of the metrics are already valid.", "", ["SELECT", "  dateTrunc(", "  sessions.source ||", "  purchases.currency", "  SUM(", "  COUNT(", "GROUP BY"]],
   [["plan"], "The filter names a field, so it goes to WHERE; one on a metric would go to HAVING. Rows are sorted by the first metric, largest first, so the agent never ranks them itself.", "", ["WHERE", "  sessions.country", "ORDER BY", "  revenue DESC"]],
@@ -108,7 +108,7 @@ const STEPS = [
   [["plan"], "What if the agent asks for session_conversion_rate by purchases.currency? Currency is a field of purchases, so sessions would be seen through purchases, once per purchase, and the rate would be wrong. The planner refuses and says why:", "metric 'session_conversion_rate' aggregates sessions rows, but this question is answered over purchases rows (because of dimension 'purchases.currency'): it would see only sessions rows that purchases references, once per reference. Filter or group a sessions metric only by fields of sessions or of datasets sessions joins to", []],
   [["trim", "sys"], "What if this user may not read the column purchases.revenue? revenue and average_order_value leave the model; revenue_usd, from another column, stays. Asked the same question, the agent gets:", "unknown metric 'revenue' (did you mean: revenue_usd, events?)", []]
 ];
-const OVERVIEW = ["Select a box, or follow a question", "Purple is ossie-clickhouse. The model, the agent and ClickHouse with its users are yours.", ""];
+const OVERVIEW = ["Select a box, or follow a question", "Purple is dactopus-ossie-clickhouse. The model, the agent and ClickHouse with its users are yours.", ""];
 const $ = id => document.getElementById(id);
 let nodes = [];
 let step = -1;

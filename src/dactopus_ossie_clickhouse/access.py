@@ -16,8 +16,8 @@ import yaml
 from ossie import OssieDocument
 from sqlglot import exp
 
-from ossie_clickhouse.planner import PlanError
-from ossie_clickhouse.translate import parse, pick_expression
+from dactopus_ossie_clickhouse.planner import PlanError
+from dactopus_ossie_clickhouse.translate import parse, pick_expression
 
 
 @dataclass(frozen=True)

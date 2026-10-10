@@ -18,10 +18,10 @@ from typing import Any
 
 from ossie import OssieDocument
 
-from ossie_clickhouse.access import Policy
-from ossie_clickhouse.executor import Executor, connect
-from ossie_clickhouse.planner import PlanError, Query
-from ossie_clickhouse.translate import pick_expression
+from dactopus_ossie_clickhouse.access import Policy
+from dactopus_ossie_clickhouse.executor import Executor, connect
+from dactopus_ossie_clickhouse.planner import PlanError, Query
+from dactopus_ossie_clickhouse.translate import pick_expression
 
 # --- pure views of a model, testable without a server ------------------------
 
@@ -145,13 +145,15 @@ def build_server(
     try:
         from mcp.server import MCPServer
     except ImportError as e:  # pragma: no cover
-        raise ImportError("MCP support needs the extra: pip install 'ossie-clickhouse[mcp]'") from e
+        raise ImportError(
+            "MCP support needs the extra: pip install 'dactopus-ossie-clickhouse[mcp]'"
+        ) from e
 
     executor = Executor(client_factory(), model, policy)
     m = executor.model  # trimmed to what the connected user may see
     server = MCPServer(
-        "ossie-clickhouse",
-        version=version("ossie-clickhouse"),
+        "dactopus-ossie-clickhouse",
+        version=version("dactopus-ossie-clickhouse"),
         instructions=instructions(m),
     )
     server.location = executor.location  # for `serve` to print
