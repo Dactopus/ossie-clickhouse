@@ -155,6 +155,12 @@ def test_format_must_be_literal():
         ("MEDIAN(x, 1)", r"expected MEDIAN\(expr\), got 2 argument"),
         ("MEDIAN(DISTINCT x, y)", r"expected MEDIAN\(expr\), got 2 argument"),
         ("PERCENTILE_CONT(0.5)", r"expected PERCENTILE_CONT\(p\) WITHIN GROUP"),
+        ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) OVER ()", r"cannot take OVER"),
+        (
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "
+            "OVER (PARTITION BY y)",
+            r"PERCENTILE_CONT cannot take OVER",
+        ),
         # too few: a clear error, not an IndexError
         ("APPROX_PERCENTILE(x)", r"got 1"),
         ("TO_DATE()", r"got 0"),
