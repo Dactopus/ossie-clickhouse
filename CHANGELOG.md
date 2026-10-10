@@ -19,8 +19,8 @@ a minor release may change the Python API.
   be installed together. To migrate:
   - uninstall `ossie-clickhouse` (`pip uninstall`, `uv tool uninstall`),
     then install `dactopus-ossie-clickhouse`. In this order: both packages
-    install an `ossie-clickhouse` command, so `uv tool` and pipx refuse the
-    new one while the old one is installed, and uninstalling the old one
+    install an `ossie-clickhouse` command, so `uv tool` refuses the new one
+    while the old one is installed, and uninstalling the old one
     afterwards removes the command from the new one too;
   - import `dactopus_ossie_clickhouse` instead of `ossie_clickhouse`;
   - run `dactopus-ossie-clickhouse` instead of `ossie-clickhouse`. The old
