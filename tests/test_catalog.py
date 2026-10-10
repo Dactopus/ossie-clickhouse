@@ -236,6 +236,7 @@ WINDOWS = [
     "ROW_NUMBER() OVER (ORDER BY k)",
     "RANK() OVER (ORDER BY k DESC)",
     "LAG(v, 1) OVER (ORDER BY k)",
+    "MEDIAN(v) OVER (ORDER BY k ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
 ]
 
 
@@ -287,7 +288,7 @@ def test_window_offsets(expr, clickhouse, duck):
     check_rows(expr, clickhouse, duck, CH_OFFSET, DUCK_OFFSET)
 
 
-@pytest.mark.parametrize("expr", [c[0] for c in AGGREGATES + CATALOG + WINDOWS + OFFSETS])
+@pytest.mark.parametrize("expr", [c[0] for c in AGGREGATES + CATALOG] + WINDOWS + OFFSETS)
 def test_rewrite_is_idempotent(expr):
     # The planner rewrites a metric, then again inside a filter that names it.
     from ossie_clickhouse.translate import parse, rewrite_tree

@@ -190,10 +190,15 @@ def _shape_problem(node: exp.Expression) -> str | None:
         # The PERCENTILE_DISC rewrite is several aggregates, which one OVER cannot
         # cover: refuse it here rather than send SQL ClickHouse rejects.
         outer = node.parent.parent
-        if isinstance(outer, exp.Filter):
+        while isinstance(outer, exp.Filter | exp.RespectNulls | exp.IgnoreNulls):
             outer = outer.parent
         if isinstance(node, exp.PercentileDisc) and isinstance(outer, exp.Window):
             return "PERCENTILE_DISC cannot take OVER"
+    # FILTER belongs to an aggregate; the rewrite would push it into any inside.
+    if isinstance(node, exp.Filter) and not isinstance(
+        node.this, exp.AggFunc | exp.WithinGroup | exp.Anonymous
+    ):
+        return f"FILTER applies to an aggregate, not to {node.this.sql()}"
     # The signature check counts DISTINCT x, y as one argument.
     if isinstance(node, exp.Median) and isinstance(node.this, exp.Distinct):
         if (n := len(node.this.expressions)) != 1:

@@ -165,6 +165,11 @@ def test_format_must_be_literal():
             "OVER (PARTITION BY y)",
             r"PERCENTILE_DISC cannot take OVER",
         ),
+        (
+            "PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) IGNORE NULLS OVER ()",
+            r"PERCENTILE_DISC cannot take OVER",
+        ),
+        ("COALESCE(SUM(x), 0) FILTER (WHERE x > 1)", r"FILTER applies to an aggregate"),
         # too few: a clear error, not an IndexError
         ("APPROX_PERCENTILE(x)", r"got 1"),
         ("TO_DATE()", r"got 0"),
