@@ -141,8 +141,6 @@ def norm(v):
     if isinstance(v, DT):
         v = v.replace(tzinfo=None)
         return v.date() if v.time() == dt.time() else v  # midnight timestamp == date
-    if isinstance(v, dt.timedelta):
-        return v.days
     return v
 
 
@@ -232,11 +230,16 @@ def test_current(expr, clickhouse):
     assert isinstance(got, dt.date)
 
 
-@pytest.mark.parametrize("expr", ["CURRENT_TIME", "TIME '10:30:00'", "CAST('10:30:00' AS TIME)"])
-def test_time_type_executes(expr, clickhouse):
-    """clickhouse-connect does not decode Time, so compare as string."""
-    got = clickhouse.query(f"SELECT toString({to_clickhouse(expr)})").result_rows[0][0]
-    assert got.count(":") == 2
+@pytest.mark.parametrize("expr", ["TIME '10:30:00'", "CAST('10:30:00' AS TIME)"])
+def test_time_values(expr, clickhouse):
+    # clickhouse-connect reads ClickHouse's Time as the timedelta since midnight.
+    got = clickhouse.query(f"SELECT {to_clickhouse(expr)}").result_rows[0][0]
+    assert got == dt.timedelta(hours=10, minutes=30)
+
+
+def test_current_time(clickhouse):
+    got = clickhouse.query(f"SELECT {to_clickhouse('CURRENT_TIME')}").result_rows[0][0]
+    assert dt.timedelta(0) <= got < dt.timedelta(days=1)
 
 
 # Window base: order key k with a NULL; id identifies the row in the comparison.
