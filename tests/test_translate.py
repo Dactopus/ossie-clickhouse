@@ -62,6 +62,10 @@ def test_translate_uses_picked_dialect():
             "PERCENTILE_CONT(0.5 - 0.2) WITHIN GROUP (ORDER BY x DESC)",
             "quantileExactInclusiveOrNull(1 - (0.5 - 0.2))(toFloat64(x))",
         ),
+        (
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) OVER (PARTITION BY y)",
+            "quantileExactInclusiveOrNull(0.5)(toFloat64(x)) OVER (PARTITION BY y)",
+        ),
         ("APPROX_PERCENTILE(x, 0.5)", "quantileTDigest(0.5)(x)"),
         ("APPROX_COUNT_DISTINCT(x)", "uniq(x)"),
         # windows: NULL for a missing row, NULLs respected (ANSI)
@@ -157,9 +161,9 @@ def test_format_must_be_literal():
         ("PERCENTILE_CONT(0.5)", r"expected PERCENTILE_CONT\(p\) WITHIN GROUP"),
         ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) OVER ()", r"cannot take OVER"),
         (
-            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "
+            "PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "
             "OVER (PARTITION BY y)",
-            r"PERCENTILE_CONT cannot take OVER",
+            r"PERCENTILE_DISC cannot take OVER",
         ),
         # too few: a clear error, not an IndexError
         ("APPROX_PERCENTILE(x)", r"got 1"),
