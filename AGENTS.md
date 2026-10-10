@@ -156,8 +156,9 @@ local ClickHouse. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup.
 - A rewritten function, ours or SQLGlot's, gets its spec signature in
   `_SIGNATURES`; `parse()` rejects other argument counts, so a rewrite
   never drops an argument.
-- `clickhouse-connect` reads `Time` as a `timedelta` since midnight, not
-  a `datetime.time`.
+- `clickhouse-connect` reads `Time` as a `timedelta`, not a
+  `datetime.time`: ClickHouse's `Time` is a signed duration up to
+  `999:59:59`, not a time of day.
 
 ## Development
 

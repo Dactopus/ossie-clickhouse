@@ -232,7 +232,7 @@ def test_current(expr, clickhouse):
 
 @pytest.mark.parametrize("expr", ["TIME '10:30:00'", "CAST('10:30:00' AS TIME)"])
 def test_time_values(expr, clickhouse):
-    # clickhouse-connect reads ClickHouse's Time as the timedelta since midnight.
+    # ClickHouse's Time is a signed duration; clickhouse-connect reads it as a timedelta.
     got = clickhouse.query(f"SELECT {to_clickhouse(expr)}").result_rows[0][0]
     assert got == dt.timedelta(hours=10, minutes=30)
 
